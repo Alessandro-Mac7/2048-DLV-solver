@@ -1,0 +1,66 @@
+package dlv;
+
+import core.TileDLV;
+import java.util.LinkedList;
+
+public class Solver{
+
+	public Solver() {}
+	
+	public int solve( LinkedList <TileDLV> tiles ){
+		
+		LinkedList<TileDLV> result = new LinkedList<TileDLV>();
+		<#
+			in = tiles::m;
+            out = result::res;
+            
+            #maxint = 200.
+            
+            size(16).
+            
+ //			% GUESS
+            non_res(X,Y,V,M,S,ID) | res(X,Y,V,M,S,ID) :- m(X,Y,V,M,S,ID).
+            
+//			% per ogni tileDLV conta il numero di merge
+			contaMerge(ID,N,R):- m(_,_,_,_,_,ID), #count{M,X,Y: m(X,Y,V,M,S,ID),M!=0}=N, #max{V1:m(X1,Y1,V1,M1,S1,ID),M1!=0}=R.
+//			% tileDLV con il massimo numero di merge
+			maxMerge(R) :- #max{N:contaMerge(_,N,_)}=R.
+			maxVal(R):-#max{N:contaMerge(_,_,N)}=R.
+			tileMax(ID,N) :- contaMerge(ID,N,_),maxMerge(N).
+			
+//			% per ogni tileDLV somma lo score
+			sommaScore(ID,N):- m(_,_,_,_,_,ID), #sum{S,X,Y: m(X,Y,V,M,S,ID)}=N.
+//			% tileDLV con il massimo score
+			maxScore(R) :- #max{N:sommaScore(_,N)}=R.
+				
+//			% TileMax deve essere in result
+			tileMaxSafe(ID):-tileMax(ID, _).
+			:-res(_, _, _,_,_, ID), not tileMaxSafe(ID).
+			:-  #count{ID: res(_, _, _, _, _, ID)}=0.
+			
+//			% count Tile liberi
+			tileVuoti(ID,Z):- m(_,_,_,_,_,ID), #count{V,X,Y: m(X,Y,V,M,S,ID),M!=0}=R, size(L), #absdiff(R, L, Z).
+			
+//			% non possono esistere piu matrici come soluzione
+			:- res(_, _, _,_,_, ID), res(_, _, _,_,_, ID2), ID != ID2.
+			
+//			% costi: massimizzare i score se possibile
+			:~ res(_,_,_,_,_,ID), sommaScore(ID,S), maxScore(M),#absdiff(S, M, Z) . [Z:1]
+			:~ res(_,_,_,_,_,ID), contaMerge(ID,_,S), maxVal(M), #absdiff(S, M, Z). [Z:2]
+			:~ res(_, _, _, _, _, ID), tileVuoti(ID, S), size(L), #absdiff(S, L, Z). [Z:3]
+			
+		
+		#>
+		if_no_answerset{
+			System.out.println("Nessuna soluzione");
+			return 0;
+		} catch_error{
+			System.err.println("ERRORE");
+			return 0;
+		}
+		
+		return result.getFirst().getId();
+	}
+	
+	
+}

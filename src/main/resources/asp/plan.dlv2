@@ -1,0 +1,95 @@
+% ============================================================
+% 2048 come problema di PIANIFICAZIONE in ASP (DLV2 / ASP-Core-2)
+% Valori = ESPONENTI: valore reale = 2^E
+%
+% In ingresso:  at(0,R,C,E).  horizon(H).  time(0..H).  step(0..H-1).
+% In uscita:    move(T,D) con D in {u,d,l,r}
+%
+% NB: i ranghi usano conteggio RICORSIVO e non #count, perche' at(T+1)
+% dipende da at(T) attraverso i ranghi e gli aggregati ricorsivi con la
+% testa sono vietati. La formulazione e' gia' validata: non "semplificarla"
+% rimettendo #count senza rimisurare.
+% ============================================================
+
+idx(0..3).
+dir(u). dir(d). dir(l). dir(r).
+
+% ---- proiezione cella -> (linea, posizione); P=0 = estremo di arrivo
+lin(l,R,C,R,C) :- idx(R), idx(C).
+lin(r,R,C,R,P) :- idx(R), idx(C), P=3-C.
+lin(u,R,C,C,R) :- idx(R), idx(C).
+lin(d,R,C,C,P) :- idx(R), idx(C), P=3-R.
+
+% ---- GUESS: esattamente una mossa per passo
+move(T,D) | nomove(T,D) :- step(T), dir(D).
+qualche(T) :- move(T,_).
+:- step(T), not qualche(T).
+:- move(T,D), move(T,D2), D < D2.
+
+% ---- proiezione dello stato sulla linea (solo direzione scelta)
+lat(T,D,L,P,E) :- at(T,R,C,E), lin(D,R,C,L,P), move(T,D).
+locc(T,D,L,P)  :- lat(T,D,L,P,_).
+lline(T,D,L)   :- move(T,D), idx(L).
+
+% ---- rango fra le occupate: conteggio progressivo (no aggregati)
+cnt(T,D,L,0,0)   :- lline(T,D,L).
+cnt(T,D,L,P1,N1) :- cnt(T,D,L,P,N), locc(T,D,L,P), P1=P+1, P1<=3, N1=N+1.
+cnt(T,D,L,P1,N)  :- cnt(T,D,L,P,N), not locc(T,D,L,P), P1=P+1, P1<=3.
+lrank(T,D,L,P,N) :- locc(T,D,L,P), cnt(T,D,L,P,N).
+comp(T,D,L,K,E)  :- lat(T,D,L,P,E), lrank(T,D,L,P,K).
+
+% ---- merge greedy lungo la linea (stratificato localmente su K)
+mrg(T,D,L,K)   :- comp(T,D,L,K,E), K1=K+1, comp(T,D,L,K1,E), not cons(T,D,L,K).
+cons(T,D,L,K1) :- mrg(T,D,L,K), K1=K+1.
+
+% ---- sopravvissute dopo il merge
+surv(T,D,L,K,E1) :- mrg(T,D,L,K), comp(T,D,L,K,E), E1=E+1.
+surv(T,D,L,K,E)  :- comp(T,D,L,K,E), not cons(T,D,L,K), not mrg(T,D,L,K).
+soc(T,D,L,K)     :- surv(T,D,L,K,_).
+
+% ---- rango dopo il merge
+scnt(T,D,L,0,0)   :- lline(T,D,L).
+scnt(T,D,L,K1,N1) :- scnt(T,D,L,K,N), soc(T,D,L,K), K1=K+1, K1<=3, N1=N+1.
+scnt(T,D,L,K1,N)  :- scnt(T,D,L,K,N), not soc(T,D,L,K), K1=K+1, K1<=3.
+srank(T,D,L,K,N)  :- soc(T,D,L,K), scnt(T,D,L,K,N).
+
+% ---- stato successivo
+at(T1,R,C,E) :- surv(T,D,L,K,E), srank(T,D,L,K,J), lin(D,R,C,L,J),
+                move(T,D), T1=T+1, time(T1).
+
+% ---- legalita': deve esserci un merge o uno scorrimento
+legale(T,D) :- comp(T,D,L,K,E), K1=K+1, comp(T,D,L,K1,E).
+legale(T,D) :- locc(T,D,L,P), lrank(T,D,L,P,K), K < P.
+:- move(T,D), not legale(T,D).
+
+% ============================================================
+% VALUTAZIONE DELLO STATO FINALE
+% domini limitati: obbligatori perche' questi aggregati dipendono
+% dal guess disgiuntivo
+% ============================================================
+dom16(0..16).
+dom24(0..24).
+domE(1..17).
+domM(0..32).
+
+occfin(R,C) :- at(TH,R,C,_), horizon(TH).
+piene(M)    :- dom16(M), #count{R,C : occfin(R,C)} = M.
+
+maxfin(E) :- domE(E), #max{E1 : at(TH,_,_,E1), horizon(TH)} = E.
+inangolo  :- at(TH,0,0,E), horizon(TH), maxfin(E).
+
+% monotonia di riga: coppie adiacenti crescenti (euristica "scala")
+disordine(N) :- dom24(N),
+                #count{R,C : at(TH,R,C,E), horizon(TH), C1=C+1,
+                             at(TH,R,C1,E1), E1>E} = N.
+
+% numero di merge nel piano (proxy economico del punteggio)
+nmerge(N) :- domM(N), #count{T,D,L,K : mrg(T,D,L,K)} = N.
+
+% ============================================================
+% OTTIMIZZAZIONE (livello piu' alto = piu' importante)
+% ============================================================
+:~ not inangolo.      [1@4]
+:~ piene(M).          [M@3, M]
+:~ disordine(N).      [N@2, N]
+:~ nmerge(N), C=32-N. [C@1, C]

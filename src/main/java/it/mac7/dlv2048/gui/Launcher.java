@@ -1,4 +1,4 @@
-package gui;
+package it.mac7.dlv2048.gui;
 
 import java.awt.BorderLayout;
 

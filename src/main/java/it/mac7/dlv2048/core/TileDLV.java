@@ -1,4 +1,4 @@
-package core;
+package it.mac7.dlv2048.core;
 
 public class TileDLV {
 

@@ -1,4 +1,4 @@
-package gui;
+package it.mac7.dlv2048.gui;
 
 import java.awt.Color;
 import java.awt.Dimension;
@@ -14,8 +14,8 @@ import java.awt.event.MouseEvent;
 
 import javax.swing.JPanel;
 
-import core.Game;
-import core.State;
+import it.mac7.dlv2048.core.Game;
+import it.mac7.dlv2048.core.State;
 
 @SuppressWarnings("serial")
 public class GamePanel extends JPanel implements Runnable, KeyListener{
@@ -138,10 +138,6 @@ public class GamePanel extends JPanel implements Runnable, KeyListener{
         case KeyEvent.VK_RIGHT:
         	if(game.getState() == State.running)
         		game.moveRight();
-            break;
-        case KeyEvent.VK_S:
-        	if(game.getState() == State.running)
-        		game.solve();
             break;
 		}
 		

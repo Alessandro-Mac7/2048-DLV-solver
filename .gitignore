@@ -5,5 +5,4 @@ bin/
 *.iml
 .DS_Store
 dlv2
-CLAUDE.md
 .superpowers/

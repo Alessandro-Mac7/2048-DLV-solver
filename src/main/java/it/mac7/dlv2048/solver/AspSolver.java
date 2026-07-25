@@ -46,13 +46,10 @@ public final class AspSolver implements Solver {
     /** Ultimo binario localizzato. Volatile: il solver gira sul worker della GUI. */
     private volatile Optional<Path> binary = Optional.empty();
 
-    private final ChecksumCache checksum = new ChecksumCache();
-
     public AspSolver() {
         this(ORIZZONTE_MAX_DEFAULT, BUDGET_DEFAULT);
     }
 
-    /** Approfondisce da 1 a {@code horizonMax} spendendo al massimo {@code budget} in totale. */
     public AspSolver(int horizonMax, Duration budget) {
         this(horizonMax, budget, DlvBinary::locate);
     }
@@ -94,7 +91,11 @@ public final class AspSolver implements Solver {
             return SolverOutcome.fallito(SolverStatus.BINARIO_ASSENTE, elapsed(t0));
         }
         Path bin = trovato.get();
-        if (!checksum.valido(bin)) {
+        // Ricalcolato a ogni chiamata, non memoizzato: una cache su (percorso,
+        // mtime) e' aggirabile sostituendo il contenuto del binario e
+        // rimettendo l'mtime originale. Il costo (pochi ms su un binario di
+        // 3 MB) e' trascurabile sul budget di ricerca.
+        if (!DlvBinary.checksumValido(bin)) {
             return SolverOutcome.fallito(SolverStatus.CHECKSUM_ERRATO, elapsed(t0));
         }
 

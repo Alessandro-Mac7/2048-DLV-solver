@@ -4,7 +4,11 @@ import it.mac7.dlv2048.core.Board;
 import it.mac7.dlv2048.core.Game;
 import it.mac7.dlv2048.core.GameState;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -192,6 +196,37 @@ class AspSolverTest {
         assertNotEquals(SolverStatus.BINARIO_ASSENTE, s.bestMove(b).status(),
                 "il binario comparso nel frattempo deve essere ritrovato senza riavviare il gioco");
         assertEquals(2, risoluzioni.get());
+    }
+
+    /**
+     * L'attacco dimostrato in review: copiare il binario autentico (checksum
+     * ok), poi sostituirne il contenuto con uno script qualsiasi rimettendo
+     * l'mtime originale. Una verifica che si fidi di (percorso, mtime) non se
+     * ne accorge ed esegue il binario falso; il checksum va ricalcolato a ogni
+     * bestMove.
+     */
+    @Test
+    void un_contenuto_sostituito_con_lo_stesso_mtime_produce_checksum_errato(@TempDir Path dir)
+            throws Exception {
+        assumeTrue(dlvDisponibile(), "DLV2 non installato");
+        Path autentico = DlvBinary.locate().orElseThrow();
+        Path copia = dir.resolve("dlv2");
+        Files.copy(autentico, copia);
+        copia.toFile().setExecutable(true);
+        FileTime mtimeOriginale = Files.getLastModifiedTime(copia);
+
+        Board b = Board.of(1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        AspSolver s = new AspSolver(1, Duration.ofSeconds(5), Optional.of(copia));
+        assertEquals(SolverStatus.OK, s.bestMove(b).status(),
+                "la copia autentica deve superare il checksum ed essere eseguita");
+
+        Files.writeString(copia, "#!/bin/sh\necho attacco\n", StandardCharsets.UTF_8);
+        Files.setLastModifiedTime(copia, mtimeOriginale);
+
+        SolverOutcome esito = s.bestMove(b);
+        assertEquals(SolverStatus.CHECKSUM_ERRATO, esito.status(),
+                "contenuto sostituito con mtime preservato: non deve eseguire il binario falso");
+        assertTrue(esito.move().isEmpty());
     }
 
     @Test

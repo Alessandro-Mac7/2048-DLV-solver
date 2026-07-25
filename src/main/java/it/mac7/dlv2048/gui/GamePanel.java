@@ -24,11 +24,21 @@ import it.mac7.dlv2048.solver.SolverStatus;
 @SuppressWarnings("serial")
 public class GamePanel extends JPanel implements Runnable, KeyListener{
 
-	final Color[] colorTable = {
+	static final Color[] COLOR_TABLE = {
 	        new Color(0x701710), new Color(0xFFE4C3), new Color(0xfff4d3),
 	        new Color(0xffdac3), new Color(0xe7b08e), new Color(0xe7bf8e),
 	        new Color(0xffc4c3), new Color(0xE7948e), new Color(0xbe7e56),
 	        new Color(0xbe5e56), new Color(0x9c3931), new Color(0x701710)};
+
+	/**
+	 * Colore di una tessera dal suo valore. L'indice log2(valore)+1 esce dalla
+	 * tabella gia' a 2048 (chiede il 12 su 12 colori): va limitato, altrimenti
+	 * disegnare la tessera della vittoria fa saltare la paintComponent.
+	 */
+	static int indiceColore(int value) {
+		int i = (int) (Math.log(value) / Math.log(2)) + 1;
+		return Math.max(0, Math.min(i, COLOR_TABLE.length - 1));
+	}
 
 	private Color gridColor = new Color(0xBBADA0);
     private Color emptyColor = new Color(0xCDC1B4);
@@ -121,11 +131,11 @@ public class GamePanel extends JPanel implements Runnable, KeyListener{
     void drawTile(Graphics2D g, int r, int c) {
         int value = game.board().valueAt(r, c);
 
-        g.setColor(colorTable[(int) (Math.log(value) / Math.log(2)) + 1]);
+        g.setColor(COLOR_TABLE[indiceColore(value)]);
         g.fillRoundRect(215 + c * 121, 115 + r * 121, 106, 106, 7, 7);
         String s = String.valueOf(value);
 
-        g.setColor(value < 128 ? colorTable[0] : colorTable[1]);
+        g.setColor(value < 128 ? COLOR_TABLE[0] : COLOR_TABLE[1]);
 
         FontMetrics fm = g.getFontMetrics();
         int asc = fm.getAscent();

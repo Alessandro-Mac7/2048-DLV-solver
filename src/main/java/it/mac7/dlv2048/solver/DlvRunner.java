@@ -15,12 +15,21 @@ public final class DlvRunner {
     private DlvRunner() {}
 
     public static DlvResult run(Path binary, String program, Duration timeout) {
-        Path tmp = null;
+        Path tmpIn = null;
+        Path tmpOut = null;
         Process proc = null;
         try {
-            tmp = Files.createTempFile("dlv2048-", ".asp");
-            Files.writeString(tmp, program, StandardCharsets.UTF_8);
+            tmpIn = Files.createTempFile("dlv2048-", ".asp");
+            Files.writeString(tmpIn, program, StandardCharsets.UTF_8);
+            tmpOut = Files.createTempFile("dlv2048-out-", ".txt");
 
+            // L'output va rediretto su file, non letto dalla pipe dopo waitFor:
+            // se DLV2 produce piu' output di quanto la pipe del SO possa
+            // bufferizzare (~64KB), il processo si blocca in write() perche'
+            // nessuno la sta drenando, e waitFor scade in un falso TIMEOUT.
+            // Con l'output su file non esiste pipe da riempire: il deadlock e'
+            // strutturalmente impossibile.
+            //
             // --printonlyoptimum e' obbligatorio: senza, DLV2 enumera TUTTI gli
             // answer set ottimi simmetrici e i tempi crollano. -n=1 non basta.
             proc = new ProcessBuilder(
@@ -28,15 +37,16 @@ public final class DlvRunner {
                     "--silent",
                     "--printonlyoptimum",
                     "--filter=move/2",
-                    tmp.toString())
+                    tmpIn.toString())
                     .redirectErrorStream(true)
+                    .redirectOutput(tmpOut.toFile())
                     .start();
 
             if (!proc.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
                 proc.destroyForcibly();
                 return new DlvResult(SolverStatus.TIMEOUT, "");
             }
-            String out = new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            String out = Files.readString(tmpOut, StandardCharsets.UTF_8);
             return new DlvResult(SolverStatus.OK, out);
 
         } catch (IOException e) {
@@ -46,8 +56,11 @@ public final class DlvRunner {
             return new DlvResult(SolverStatus.ERRORE, "");
         } finally {
             if (proc != null && proc.isAlive()) proc.destroyForcibly();
-            if (tmp != null) {
-                try { Files.deleteIfExists(tmp); } catch (IOException ignored) {}
+            if (tmpIn != null) {
+                try { Files.deleteIfExists(tmpIn); } catch (IOException ignored) {}
+            }
+            if (tmpOut != null) {
+                try { Files.deleteIfExists(tmpOut); } catch (IOException ignored) {}
             }
         }
     }

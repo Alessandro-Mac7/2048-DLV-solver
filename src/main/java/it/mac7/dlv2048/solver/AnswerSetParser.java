@@ -8,20 +8,25 @@ import java.util.regex.Pattern;
 /** Estrae la mossa scelta dall'answer set stampato da DLV2. */
 public final class AnswerSetParser {
 
-    // (?<![a-z]) impedisce di matchare "move" dentro "nomove"
+    // (?<![A-Za-z0-9_]) è un confine di parola reale: impedisce di matchare
+    // "move" dentro "nomove", "auto_move", "x1move", "PREmove", ecc.
     private static final Pattern MOVE =
-            Pattern.compile("(?<![a-z])move\\((\\d+),([udlr])\\)");
+            Pattern.compile("(?<![A-Za-z0-9_])move\\((\\d+),([udlr])\\)");
 
     private AnswerSetParser() {}
 
     public static Optional<Direction> firstMove(String dlvOutput) {
         if (dlvOutput == null || dlvOutput.isBlank()) return Optional.empty();
         Matcher m = MOVE.matcher(dlvOutput);
+        // DLV2, senza --printonlyoptimum, stampa un modello ogni volta che
+        // migliora il costo: l'ultimo prima di OPTIMUM è quello ottimo.
+        // Bisogna quindi tenere l'ultima occorrenza del passo 0, non la prima.
+        Optional<Direction> last = Optional.empty();
         while (m.find()) {
             if ("0".equals(m.group(1))) {
-                return Optional.of(Direction.fromAspCode(m.group(2).charAt(0)));
+                last = Optional.of(Direction.fromAspCode(m.group(2).charAt(0)));
             }
         }
-        return Optional.empty();
+        return last;
     }
 }

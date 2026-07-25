@@ -39,4 +39,18 @@ class AnswerSetParserTest {
     void output_malformato_non_lancia_eccezioni() {
         assertEquals(Optional.empty(), AnswerSetParser.firstMove("move(x,y) move( move(0,"));
     }
+
+    @Test
+    void con_piu_answer_set_vince_l_ultimo_prima_di_optimum() {
+        String out = "{move(0,d), piene(10)}\nCOST 5@4\n{move(0,u), piene(8)}\nCOST 3@4\n"
+                + "{move(0,r), piene(6)}\nCOST 1@4\nOPTIMUM";
+        assertEquals(Optional.of(Direction.RIGHT), AnswerSetParser.firstMove(out));
+    }
+
+    @Test
+    void non_confonde_predicati_con_suffisso_move() {
+        assertEquals(Optional.empty(), AnswerSetParser.firstMove("{auto_move(0,r)}"));
+        assertEquals(Optional.empty(), AnswerSetParser.firstMove("{x1move(0,r)}"));
+        assertEquals(Optional.empty(), AnswerSetParser.firstMove("{PREmove(0,r)}"));
+    }
 }

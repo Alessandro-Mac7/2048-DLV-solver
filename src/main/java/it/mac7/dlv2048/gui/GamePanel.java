@@ -12,7 +12,10 @@ import java.awt.event.KeyListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 
+import java.util.concurrent.ExecutionException;
+
 import javax.swing.JPanel;
+import javax.swing.SwingWorker;
 
 import it.mac7.dlv2048.core.Board;
 import it.mac7.dlv2048.core.Direction;
@@ -47,19 +50,29 @@ public class GamePanel extends JPanel implements Runnable, KeyListener{
     private Thread thread;
 	private boolean goal=false;
 
-    private Game game;
+    private final Game game;
 
     /** Ultimo esito richiesto a DLV con il tasto S; null finche' non e' mai stato premuto. */
-    private SolverOutcome ultimoEsitoSolver;
+    private volatile SolverOutcome ultimoEsitoSolver;
+
+    /**
+     * Vero mentre una ricerca e' in volo. Volatile perche' lo legge anche chi
+     * osserva il pannello da fuori dall'EDT (i test).
+     */
+    private volatile boolean solverInCorso;
 
     public GamePanel(){
+    	this(new Game());
+    }
+
+    public GamePanel(Game game){
 
     	this.setPreferredSize(new Dimension(900, 700));
     	this.setBackground(new Color(0xFAF8EF));
     	this.setFont(new Font("SansSerif", Font.BOLD, 48));
     	this.setFocusable(true);
 
-    	game = new Game();
+    	this.game = game;
 
         addMouseListener(new MouseAdapter() {
             @Override
@@ -121,10 +134,15 @@ public class GamePanel extends JPanel implements Runnable, KeyListener{
             g.drawString(" S per avere un suggerimento)", 310, 545);
         }
 
-        if (ultimoEsitoSolver != null && ultimoEsitoSolver.status() != SolverStatus.OK) {
+        SolverOutcome esito = ultimoEsitoSolver;
+        if (solverInCorso) {
+            g.setColor(gridColor.darker());
+            g.setFont(new Font("SansSerif", Font.BOLD, 16));
+            g.drawString("DLV sta pensando...", 215, 625);
+        } else if (esito != null && esito.status() != SolverStatus.OK) {
             g.setColor(Color.RED.darker());
             g.setFont(new Font("SansSerif", Font.BOLD, 16));
-            g.drawString("DLV: " + ultimoEsitoSolver.status().messaggio(), 215, 625);
+            g.drawString("DLV: " + esito.status().messaggio(), 215, 625);
         }
     }
 
@@ -165,16 +183,64 @@ public class GamePanel extends JPanel implements Runnable, KeyListener{
         	if(game.stato() == GameState.RUNNING)
         		game.muovi(Direction.RIGHT);
         }
-        case KeyEvent.VK_S -> {
-            if (game.stato() == GameState.RUNNING) {
-                SolverOutcome esito = game.suggerisci();
-                esito.move().ifPresent(game::muovi);
-                ultimoEsitoSolver = esito;
-            }
-        }
+        case KeyEvent.VK_S -> avviaSuggerimento();
 		default -> { }
 		}
 
+	}
+
+	/**
+	 * La ricerca di DLV dura secondi: eseguirla qui, sull'Event Dispatch Thread,
+	 * congelava la finestra per tutto il tempo — niente ridisegno, niente
+	 * risposta ai tasti, l'utente vede l'applicazione morta. Va su un
+	 * SwingWorker, e il risultato torna sull'EDT in done(), che e' l'unico
+	 * posto da cui si puo' toccare lo stato del gioco e ridipingere.
+	 *
+	 * <p>La guardia su solverInCorso impedisce che tenere premuto S accodi
+	 * ricerche concorrenti, cioe' processi DLV in parallelo che si contendono
+	 * la CPU e applicano mosse calcolate su board ormai vecchie.
+	 */
+	private void avviaSuggerimento() {
+		if (game.stato() != GameState.RUNNING || solverInCorso) return;
+
+		solverInCorso = true;
+		ultimoEsitoSolver = null;
+		repaint();
+
+		new SwingWorker<SolverOutcome, Void>() {
+			@Override
+			protected SolverOutcome doInBackground() {
+				return game.suggerisci();
+			}
+
+			@Override
+			protected void done() {
+				try {
+					SolverOutcome esito = get();
+					if (game.stato() == GameState.RUNNING) {
+						esito.move().ifPresent(game::muovi);
+					}
+					ultimoEsitoSolver = esito;
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+				} catch (ExecutionException e) {
+					ultimoEsitoSolver = SolverOutcome.fallito(SolverStatus.ERRORE, 0);
+				} finally {
+					solverInCorso = false;
+					repaint();
+				}
+			}
+		}.execute();
+	}
+
+	/** Pacchetto-visibile per i test: vero mentre una ricerca e' in corso. */
+	boolean solverInCorso() {
+		return solverInCorso;
+	}
+
+	/** Pacchetto-visibile per i test: ultimo esito ricevuto da DLV, null se nessuno. */
+	SolverOutcome ultimoEsitoSolver() {
+		return ultimoEsitoSolver;
 	}
 
 	public void keyReleased(KeyEvent arg0) {}

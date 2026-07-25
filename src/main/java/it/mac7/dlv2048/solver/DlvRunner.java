@@ -9,6 +9,9 @@ import java.util.concurrent.TimeUnit;
 /** Esegue DLV2 come processo esterno su un programma passato via file temporaneo. */
 public final class DlvRunner {
 
+    /** Unico codice di uscita che DLV2 usa per una terminazione normale. */
+    private static final int NORMALE = 0;
+
     /** Esito grezzo: stato piu' stdout. */
     public record DlvResult(SolverStatus status, String stdout) {}
 
@@ -47,6 +50,23 @@ public final class DlvRunner {
                 return new DlvResult(SolverStatus.TIMEOUT, "");
             }
             String out = Files.readString(tmpOut, StandardCharsets.UTF_8);
+
+            // Il codice di uscita e' l'UNICO segnale affidabile di errore: con
+            // redirectErrorStream(true) i messaggi diagnostici finiscono nello
+            // stesso flusso dell'answer set, e uno stdout senza move/2 e'
+            // indistinguibile fra "nessuna soluzione" e "DLV e' morto".
+            //
+            // Codici osservati su dlv2 2.1.2 (arm64):
+            //     0 -> terminazione normale. Copre sia l'answer set trovato /
+            //          OPTIMUM sia INCOHERENT: l'assenza di answer set e' un
+            //          esito legittimo del solver, non un guasto.
+            //   100 -> file di input non apribile
+            //   110 -> opzione da riga di comando non riconosciuta
+            //   255 -> errore di sintassi ("Aborting due to parser errors")
+            int uscita = proc.exitValue();
+            if (uscita != NORMALE) {
+                return new DlvResult(SolverStatus.ERRORE, out);
+            }
             return new DlvResult(SolverStatus.OK, out);
 
         } catch (IOException e) {

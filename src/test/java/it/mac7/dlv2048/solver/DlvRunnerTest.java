@@ -35,4 +35,47 @@ class DlvRunnerTest {
                 "il programma di prova deve produrre oltre 64KB di stdout per essere un test di "
                         + "regressione valido, ottenuti " + result.stdout().length() + " caratteri");
     }
+
+    /**
+     * Regressione: con --redirectErrorStream(true) il testo di errore di DLV2 finisce
+     * nello stdout catturato. Senza controllare exitValue(), un programma non valido
+     * dava OK con uno stdout privo di move/2: il chiamante lo leggeva come
+     * "nessuna mossa possibile" mentre in realta' DLV2 era morto.
+     *
+     * Codici di uscita osservati su dlv2 2.1.2 (arm64):
+     *   0   answer set trovato / OPTIMUM / INCOHERENT (terminazione normale)
+     *   100 file di input non apribile
+     *   110 opzione da riga di comando non riconosciuta
+     *   255 errore di sintassi ("Aborting due to parser errors")
+     */
+    @Test
+    void programma_asp_non_valido_da_errore_non_ok() {
+        Optional<Path> binary = DlvBinary.locate();
+        assumeTrue(binary.isPresent(), "DLV2 non trovato (DLV2_HOME/./dlv2/PATH) - test saltato");
+
+        String program = "questo non e' (((un programma ASP valido %%%\n";
+
+        DlvRunner.DlvResult result = DlvRunner.run(binary.get(), program, Duration.ofSeconds(15));
+
+        assertEquals(SolverStatus.ERRORE, result.status(),
+                "un programma non parsabile deve dare ERRORE, non OK con stdout senza mosse");
+    }
+
+    /**
+     * L'assenza di answer set (INCOHERENT) e' una terminazione NORMALE di DLV2
+     * (uscita 0) e non va confusa con un errore: il chiamante deve poterla
+     * distinguere per riportare "nessuna mossa possibile".
+     */
+    @Test
+    void programma_senza_answer_set_resta_ok() {
+        Optional<Path> binary = DlvBinary.locate();
+        assumeTrue(binary.isPresent(), "DLV2 non trovato (DLV2_HOME/./dlv2/PATH) - test saltato");
+
+        DlvRunner.DlvResult result = DlvRunner.run(binary.get(), "a.\n:- a.\n", Duration.ofSeconds(15));
+
+        assertEquals(SolverStatus.OK, result.status(),
+                "INCOHERENT e' una terminazione legittima, non un errore");
+        assertTrue(result.stdout().contains("INCOHERENT"),
+                "atteso INCOHERENT nello stdout, ottenuto: " + result.stdout());
+    }
 }

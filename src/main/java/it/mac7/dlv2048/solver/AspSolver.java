@@ -5,6 +5,7 @@ import it.mac7.dlv2048.core.Direction;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Optional;
@@ -100,7 +101,10 @@ public final class AspSolver implements Solver {
         long t0 = System.nanoTime();
 
         Optional<Path> trovato = binarioCorrente();
-        if (trovato.isEmpty()) {
+        // Il file va cercato prima di calcolarne l'impronta: un binario assente e
+        // un binario manomesso sono guasti diversi, e confonderli accuserebbe
+        // l'utente di una manomissione senza mai mandarlo a fetch-dlv.sh.
+        if (trovato.isEmpty() || !Files.isExecutable(trovato.get())) {
             return SolverOutcome.fallito(SolverStatus.BINARIO_ASSENTE, elapsed(t0));
         }
         Path bin = trovato.get();
@@ -169,14 +173,16 @@ public final class AspSolver implements Solver {
     }
 
     /**
-     * Il binario va ricercato di nuovo finche' non lo si trova: chi legge
-     * "DLV non trovato", lancia scripts/fetch-dlv.sh e ripreme S deve vedere il
-     * risultato senza riavviare il gioco. Una volta trovato la ricerca si ferma,
-     * perche' scandire il PATH a ogni suggerimento non aggiunge nulla.
+     * Il binario va ricercato di nuovo finche' non se ne ha uno che esiste
+     * davvero: chi legge "DLV non trovato", lancia scripts/fetch-dlv.sh e
+     * ripreme S deve vedere il risultato senza riavviare il gioco, e un percorso
+     * in cache che nel frattempo e' sparito non deve congelare il solver. Finche'
+     * il file c'e' la ricerca si ferma: scandire il PATH a ogni suggerimento non
+     * aggiunge nulla.
      */
     private Optional<Path> binarioCorrente() {
         Optional<Path> corrente = binary;
-        if (corrente.isPresent()) return corrente;
+        if (corrente.isPresent() && Files.isExecutable(corrente.get())) return corrente;
         Optional<Path> risolto = localizzatore.get();
         binary = risolto;
         return risolto;

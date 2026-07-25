@@ -184,9 +184,15 @@ class AspSolverTest {
      * finche' risulta assente, non congelata nel costruttore.
      */
     @Test
-    void il_binario_assente_viene_ririsolto_alla_chiamata_successiva() {
+    void il_binario_assente_viene_ririsolto_alla_chiamata_successiva(@TempDir Path dir)
+            throws Exception {
         Board b = Board.of(1,1,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0);
-        Path scaricato = Path.of(System.getProperty("java.io.tmpdir"), "dlv2-appena-scaricato");
+        // il file deve esistere davvero: e' cio' che simula lo script di
+        // download appena eseguito. Il contenuto non e' quello autentico, quindi
+        // l'esito sara' CHECKSUM_ERRATO, che e' comunque "trovato".
+        Path scaricato = dir.resolve("dlv2");
+        Files.writeString(scaricato, "comparso dopo il primo tentativo");
+        assertTrue(scaricato.toFile().setExecutable(true));
         AtomicInteger risoluzioni = new AtomicInteger();
         Supplier<Optional<Path>> localizzatore =
                 () -> risoluzioni.incrementAndGet() == 1 ? Optional.empty() : Optional.of(scaricato);
@@ -255,13 +261,18 @@ class AspSolverTest {
     }
 
     @Test
-    void un_binario_gia_trovato_non_viene_ririsolto_a_ogni_mossa() {
+    void un_binario_gia_trovato_non_viene_ririsolto_a_ogni_mossa(@TempDir Path dir) throws Exception {
         Board b = Board.of(1,1,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0);
-        Path finto = Path.of(System.getProperty("java.io.tmpdir"), "dlv2-finto-non-esiste");
+        // deve esistere davvero: un percorso fantasma verrebbe giustamente
+        // ririsolto, ed e' proprio cio' che verifica il test successivo
+        Path presente = dir.resolve("dlv2");
+        Files.writeString(presente, "non e' il binario vero, ma c'e'");
+        assertTrue(presente.toFile().setExecutable(true));
+
         AtomicInteger risoluzioni = new AtomicInteger();
         Supplier<Optional<Path>> localizzatore = () -> {
             risoluzioni.incrementAndGet();
-            return Optional.of(finto);
+            return Optional.of(presente);
         };
 
         AspSolver s = new AspSolver(2, Duration.ofSeconds(3), localizzatore);
@@ -271,5 +282,67 @@ class AspSolverTest {
 
         assertEquals(1, risoluzioni.get(),
                 "un binario gia' localizzato non va ricercato a ogni suggerimento");
+    }
+
+    /**
+     * Il caso peggiore: il binario sparisce dopo essere stato usato. Riportare
+     * CHECKSUM_ERRATO accuserebbe l'utente di avere un binario manomesso e non
+     * gli direbbe mai di eseguire fetch-dlv.sh. File assente e file manomesso
+     * sono due guasti diversi e vanno detti in modo diverso.
+     */
+    @Test
+    void un_binario_cancellato_dopo_l_uso_non_diventa_un_falso_checksum_errato(@TempDir Path dir)
+            throws Exception {
+        assumeTrue(dlvDisponibile(), "DLV2 non installato");
+        Path copia = dir.resolve("dlv2");
+        Files.copy(DlvBinary.locate().orElseThrow(), copia);
+        assertTrue(copia.toFile().setExecutable(true));
+
+        Board b = Board.of(1,1,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0);
+        AspSolver s = new AspSolver(1, Duration.ofSeconds(5), Optional.of(copia));
+        assertEquals(SolverStatus.OK, s.bestMove(b).status());
+
+        Files.delete(copia);
+        assertEquals(SolverStatus.BINARIO_ASSENTE, s.bestMove(b).status());
+    }
+
+    @Test
+    void un_binario_ripristinato_torna_a_funzionare_senza_riavviare(@TempDir Path dir)
+            throws Exception {
+        assumeTrue(dlvDisponibile(), "DLV2 non installato");
+        Path autentico = DlvBinary.locate().orElseThrow();
+        Path copia = dir.resolve("dlv2");
+        Files.copy(autentico, copia);
+        assertTrue(copia.toFile().setExecutable(true));
+
+        Board b = Board.of(1,1,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0);
+        AspSolver s = new AspSolver(1, Duration.ofSeconds(5), Optional.of(copia));
+        assertEquals(SolverStatus.OK, s.bestMove(b).status());
+
+        Files.delete(copia);
+        assertEquals(SolverStatus.BINARIO_ASSENTE, s.bestMove(b).status());
+
+        Files.copy(autentico, copia);
+        assertTrue(copia.toFile().setExecutable(true));
+        assertEquals(SolverStatus.OK, s.bestMove(b).status(),
+                "ripristinato il binario, il solver deve tornare utilizzabile");
+    }
+
+    /**
+     * TIMEOUT era l'unico stato mai asserito da un test, pur essendo quello che
+     * l'utente incontra piu' spesso quando la macchina e' carica.
+     */
+    @Test
+    void quando_nemmeno_il_primo_livello_rientra_nel_budget_lo_stato_e_timeout() {
+        assumeTrue(dlvDisponibile(), "DLV2 non installato");
+        Path bin = DlvBinary.locate().orElseThrow();
+        AspSolver s = new AspSolver(4, Duration.ofSeconds(3), () -> Optional.of(bin),
+                (b, programma, timeout) -> new DlvRunner.DlvResult(SolverStatus.TIMEOUT, ""));
+
+        SolverOutcome o = s.bestMove(Board.of(1,1,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0));
+
+        assertEquals(SolverStatus.TIMEOUT, o.status());
+        assertTrue(o.move().isEmpty());
+        assertEquals(0, o.horizonRaggiunto());
     }
 }

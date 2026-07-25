@@ -207,6 +207,8 @@ public class GamePanel extends JPanel implements Runnable, KeyListener{
 		ultimoEsitoSolver = null;
 		repaint();
 
+		Board boardRichiesta = game.board();
+
 		new SwingWorker<SolverOutcome, Void>() {
 			@Override
 			protected SolverOutcome doInBackground() {
@@ -217,10 +219,14 @@ public class GamePanel extends JPanel implements Runnable, KeyListener{
 			protected void done() {
 				try {
 					SolverOutcome esito = get();
-					if (game.stato() == GameState.RUNNING) {
+					// Fra la richiesta e questo momento l'utente puo' aver mosso con le
+					// frecce o aver avviato un'altra partita col mouse: un suggerimento
+					// calcolato su una board che non e' piu' quella attuale va scartato
+					// per intero, non solo la mossa.
+					if (game.stato() == GameState.RUNNING && game.board().equals(boardRichiesta)) {
 						esito.move().ifPresent(game::muovi);
+						ultimoEsitoSolver = esito;
 					}
-					ultimoEsitoSolver = esito;
 				} catch (InterruptedException e) {
 					Thread.currentThread().interrupt();
 				} catch (ExecutionException e) {

@@ -14,7 +14,8 @@ public final class Game {
     private final Random rand = new Random();
     private final Solver solver;
 
-    private Board board = Board.empty();
+    /** Letta anche dal worker del solver mentre l'EDT la scrive: volatile per pubblicarne le scritture. */
+    private volatile Board board = Board.empty();
     private GameState stato = GameState.START;
     private int punteggio;
 

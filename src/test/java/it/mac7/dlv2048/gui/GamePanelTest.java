@@ -41,6 +41,27 @@ class GamePanelTest {
         }
     }
 
+    /** Come SolverLento, ma senza restituire mai una mossa: isola la verifica sull'esito. */
+    private static final class SolverLentoSenzaMossa implements Solver {
+        @Override
+        public SolverOutcome bestMove(Board board) {
+            try {
+                Thread.sleep(ATTESA_SOLVER_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return SolverOutcome.fallito(SolverStatus.NESSUNA_SOLUZIONE, ATTESA_SOLVER_MS);
+        }
+    }
+
+    /** Prima direzione che cambia davvero la board: con solo 2 tessere ce n'e' sempre una. */
+    private static Direction mossaLegaleQualsiasi(Board board) {
+        for (Direction d : Direction.values()) {
+            if (board.move(d).moved()) return d;
+        }
+        throw new AssertionError("nessuna mossa legale sulla board: " + board);
+    }
+
     private static KeyEvent tastoS(GamePanel panel) {
         return new KeyEvent(panel, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0,
                 KeyEvent.VK_S, 'S');
@@ -133,6 +154,31 @@ class GamePanelTest {
         assertNotEquals(prima, game.board(), "a calcolo finito la mossa suggerita va applicata");
         assertNotNull(panel.ultimoEsitoSolver(), "l'esito va registrato per l'indicazione a schermo");
         assertEquals(SolverStatus.OK, panel.ultimoEsitoSolver().status());
+    }
+
+    /**
+     * Regressione: la guardia in done() controllava solo lo stato RUNNING, non
+     * la board. Se l'utente muove con le frecce mentre DLV sta ancora
+     * pensando, il suggerimento calcolato sulla board vecchia non deve
+     * atterrare su quella nuova ne' essere mostrato come se la riguardasse.
+     */
+    @Test
+    void una_mossa_dell_utente_durante_il_calcolo_scarta_l_esito_stale() throws Exception {
+        Game game = new Game(new SolverLentoSenzaMossa());
+        game.inizia();
+        GamePanel panel = new GamePanel(game);
+
+        premiSSullEdt(panel);
+
+        Board prima = game.board();
+        Direction mossaUtente = mossaLegaleQualsiasi(prima);
+        SwingUtilities.invokeAndWait(() -> game.muovi(mossaUtente));
+        assertNotEquals(prima, game.board(), "precondizione: la mossa dell'utente deve cambiare la board");
+
+        attendiFineRicerca(panel);
+
+        assertNull(panel.ultimoEsitoSolver(),
+                "l'esito calcolato sulla board precedente va scartato, non mostrato per quella nuova");
     }
 
     /**

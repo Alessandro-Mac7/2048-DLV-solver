@@ -19,6 +19,8 @@ public final class AspEncoder {
             for (int c = 0; c < Board.SIZE; c++) {
                 int e = board.exponentAt(r, c);
                 if (e != 0) {
+                    // il programma considera "occupata" ogni cella con un fatto at/4:
+                    // una cella vuota va omessa, non codificata come at(...,0)
                     sb.append("at(0,").append(r).append(',').append(c)
                       .append(',').append(e).append(").\n");
                 }

@@ -1,6 +1,7 @@
 package it.mac7.dlv2048.solver;
 
 import it.mac7.dlv2048.core.Board;
+import it.mac7.dlv2048.core.Direction;
 import it.mac7.dlv2048.core.Game;
 import it.mac7.dlv2048.core.GameState;
 import org.junit.jupiter.api.Test;
@@ -227,6 +228,30 @@ class AspSolverTest {
         assertEquals(SolverStatus.CHECKSUM_ERRATO, esito.status(),
                 "contenuto sostituito con mtime preservato: non deve eseguire il binario falso");
         assertTrue(esito.move().isEmpty());
+    }
+
+    /**
+     * Regressione: un errore a un livello h>1 tornava ERRORE senza mossa anche
+     * quando un livello precedente aveva gia' prodotto un piano valido. Il
+     * piano buono non va buttato via per un guasto piu' in profondita'.
+     */
+    @Test
+    void un_errore_a_orizzonte_maggiore_di_uno_non_butta_via_un_piano_gia_trovato() {
+        assumeTrue(dlvDisponibile(), "DLV2 non installato");
+        Path bin = DlvBinary.locate().orElseThrow();
+        Board b = Board.of(1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+        AspSolver.Esecutore esecutore = (binario, programma, timeout) -> programma.contains("horizon(1)")
+                ? new DlvRunner.DlvResult(SolverStatus.OK, "move(0,l)")
+                : new DlvRunner.DlvResult(SolverStatus.ERRORE, "");
+
+        AspSolver s = new AspSolver(3, Duration.ofSeconds(5), () -> Optional.of(bin), esecutore);
+        SolverOutcome o = s.bestMove(b);
+
+        assertEquals(SolverStatus.OK, o.status(),
+                "un errore a orizzonte 2 non deve buttare via il piano trovato a orizzonte 1");
+        assertEquals(Optional.of(Direction.LEFT), o.move());
+        assertEquals(1, o.horizonRaggiunto());
     }
 
     @Test

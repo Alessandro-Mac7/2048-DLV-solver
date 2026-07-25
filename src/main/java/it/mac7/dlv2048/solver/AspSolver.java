@@ -36,12 +36,20 @@ public final class AspSolver implements Solver {
 
     private static final Duration BUDGET_DEFAULT = Duration.ofSeconds(3);
 
+    /** Esecuzione di un livello, iniettabile nei test al posto del processo DLV2 vero. */
+    @FunctionalInterface
+    interface Esecutore {
+        DlvRunner.DlvResult run(Path binary, String programma, Duration timeout);
+    }
+
     private final int horizonMax;
     private final Duration budget;
     private final String programma;
 
     /** Come ritrovare il binario. Interrogato di nuovo finche' l'esito e' vuoto. */
     private final Supplier<Optional<Path>> localizzatore;
+
+    private final Esecutore esecutore;
 
     /** Ultimo binario localizzato. Volatile: il solver gira sul worker della GUI. */
     private volatile Optional<Path> binary = Optional.empty();
@@ -63,6 +71,10 @@ public final class AspSolver implements Solver {
     }
 
     AspSolver(int horizonMax, Duration budget, Supplier<Optional<Path>> localizzatore) {
+        this(horizonMax, budget, localizzatore, DlvRunner::run);
+    }
+
+    AspSolver(int horizonMax, Duration budget, Supplier<Optional<Path>> localizzatore, Esecutore esecutore) {
         if (horizonMax < 1) {
             throw new IllegalArgumentException(
                     "orizzonte massimo deve essere >= 1, ricevuto " + horizonMax);
@@ -70,6 +82,7 @@ public final class AspSolver implements Solver {
         this.horizonMax = horizonMax;
         this.budget = budget;
         this.localizzatore = localizzatore;
+        this.esecutore = esecutore;
         this.programma = caricaProgramma();
     }
 
@@ -107,13 +120,13 @@ public final class AspSolver implements Solver {
         for (int h = 1; h <= horizonMax; h++) {
             long rimasto = budgetMs - elapsed(t0);
             if (rimasto <= 0) break;
-            // I tempi raddoppiano circa a ogni livello: se non c'e' spazio per il
-            // doppio del livello appena pagato, tentare significa quasi sempre
-            // buttare il residuo in un timeout invece di rispondere subito.
-            if (h > 1 && rimasto < 2 * costoLivelloPrecedente) break;
+            // Un tentativo che va in timeout non spreca il budget: DlvRunner e'
+            // comunque limitato al residuo, quindi conviene provare finche' resta
+            // almeno il tempo dell'ultimo livello pagato, non il suo doppio.
+            if (h > 1 && rimasto < costoLivelloPrecedente) break;
 
             long inizioLivello = System.nanoTime();
-            DlvRunner.DlvResult res = DlvRunner.run(
+            DlvRunner.DlvResult res = esecutore.run(
                     bin,
                     programma + "\n" + AspEncoder.facts(board, h),
                     Duration.ofMillis(rimasto)); // solo il residuo, non il budget intero
@@ -123,7 +136,12 @@ public final class AspSolver implements Solver {
                 break; // il livello non ce l'ha fatta: vale l'ultimo piano riuscito
             }
             if (res.status() != SolverStatus.OK) {
-                // errore vero (uscita anomala di DLV, I/O): va riportato, non mascherato
+                // errore vero (uscita anomala di DLV, I/O). Se un livello precedente ha
+                // gia' prodotto un piano, quel piano resta valido: buttarlo per un
+                // guasto piu' in profondita' sarebbe peggio che restituirlo per buono.
+                if (migliore.isPresent()) {
+                    return new SolverOutcome(migliore, SolverStatus.OK, elapsed(t0), horizonRaggiunto);
+                }
                 return new SolverOutcome(Optional.empty(), res.status(), elapsed(t0), horizonRaggiunto);
             }
 

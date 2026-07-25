@@ -20,9 +20,6 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  */
 class MeccanicaCoerenteTest {
 
-    private static final Pattern AT =
-            Pattern.compile("at\\(1,(\\d),(\\d),(\\d+)\\)");
-
     @Test
     void asp_e_java_concordano_su_board_casuali() throws Exception {
         Optional<Path> bin = DlvBinary.locate();
@@ -51,14 +48,63 @@ class MeccanicaCoerenteTest {
         assertTrue(confronti > 50, "troppi pochi confronti utili: " + confronti);
     }
 
-    /** Forza ASP a eseguire una direzione specifica e restituisce lo stato a T=1. */
-    private static Optional<Board> applicaConAsp(Path bin, Board b, Direction d) throws Exception {
+    /**
+     * Il solver in esercizio pianifica su 4-6 passi, non su uno. La regola che
+     * produce lo stato successivo e i ranghi che la alimentano si applicano a
+     * ogni T: una divergenza che compaia solo da T=2 in poi non sarebbe vista
+     * dal confronto a un passo.
+     */
+    @Test
+    void asp_e_java_concordano_anche_su_due_passi() throws Exception {
+        Optional<Path> bin = DlvBinary.locate();
+        assumeTrue(bin.isPresent(), "DLV2 non installato");
+
+        Random rnd = new Random(20260726L);
+        int confronti = 0;
+
+        for (int iter = 0; iter < 15; iter++) {
+            Board b = boardCasuale(rnd);
+            for (Direction prima : Direction.values()) {
+                MoveResult dopoPrima = b.move(prima);
+                if (!dopoPrima.moved()) continue;
+
+                for (Direction seconda : Direction.values()) {
+                    MoveResult dopoSeconda = dopoPrima.board().move(seconda);
+                    if (!dopoSeconda.moved()) continue;
+
+                    Optional<Board> ottenuto = applicaConAsp(bin.get(), b, prima, seconda);
+                    assertTrue(ottenuto.isPresent(),
+                            "ASP non ha prodotto uno stato per " + prima + "," + seconda
+                            + " su\n" + b);
+                    assertEquals(dopoSeconda.board(), ottenuto.get(),
+                            "divergenza a due passi su " + prima + "," + seconda
+                            + "\npartenza:\n" + b
+                            + "atteso (Java):\n" + dopoSeconda.board()
+                            + "ottenuto (ASP):\n" + ottenuto.get());
+                    confronti++;
+                }
+            }
+        }
+        assertTrue(confronti > 30, "troppi pochi confronti a due passi: " + confronti);
+    }
+
+    /**
+     * Forza ASP a eseguire esattamente la sequenza data e restituisce lo stato
+     * finale. Imporre ogni mossa toglie di mezzo l'ottimizzazione: qui si
+     * confronta la meccanica, non la scelta.
+     */
+    private static Optional<Board> applicaConAsp(Path bin, Board b, Direction... sequenza)
+            throws Exception {
         String programma = new String(MeccanicaCoerenteTest.class
                 .getResourceAsStream("/asp/plan.dlv2").readAllBytes());
 
-        // orizzonte 1, direzione imposta, e nessuna ottimizzazione di mezzo
-        String istanza = AspEncoder.facts(b, 1)
-                + ":- not move(0," + d.aspCode() + ").\n";
+        int passi = sequenza.length;
+        StringBuilder istanza = new StringBuilder(AspEncoder.facts(b, passi));
+        for (int t = 0; t < passi; t++) {
+            istanza.append(":- not move(").append(t).append(',')
+                   .append(sequenza[t].aspCode()).append(").\n");
+        }
+        Pattern AT = Pattern.compile("at\\(" + passi + ",(\\d),(\\d),(\\d+)\\)");
 
         Path tmpIn = Files.createTempFile("coerenza-", ".asp");
         Path tmpOut = Files.createTempFile("coerenza-out-", ".txt");
@@ -78,7 +124,7 @@ class MeccanicaCoerenteTest {
             }
             String out = Files.readString(tmpOut);
 
-            if (!out.contains("at(1,")) return Optional.empty();
+            if (!out.contains("at(" + passi + ",")) return Optional.empty();
 
             int[] celle = new int[16];
             Matcher m = AT.matcher(out);

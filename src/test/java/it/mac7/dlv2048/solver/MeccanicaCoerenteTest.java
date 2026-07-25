@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 import java.util.Random;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import static org.junit.jupiter.api.Assertions.*;
@@ -59,26 +60,39 @@ class MeccanicaCoerenteTest {
         String istanza = AspEncoder.facts(b, 1)
                 + ":- not move(0," + d.aspCode() + ").\n";
 
-        Path tmp = Files.createTempFile("coerenza-", ".asp");
-        Files.writeString(tmp, programma + "\n" + istanza);
+        Path tmpIn = Files.createTempFile("coerenza-", ".asp");
+        Path tmpOut = Files.createTempFile("coerenza-out-", ".txt");
+        Process p = null;
+        try {
+            Files.writeString(tmpIn, programma + "\n" + istanza);
 
-        Process p = new ProcessBuilder(bin.toString(), "--silent",
-                "--printonlyoptimum", "--filter=at/4", tmp.toString())
-                .redirectErrorStream(true).start();
-        String out = new String(p.getInputStream().readAllBytes());
-        p.waitFor();
-        Files.deleteIfExists(tmp);
+            p = new ProcessBuilder(bin.toString(), "--silent",
+                    "--printonlyoptimum", "--filter=at/4", tmpIn.toString())
+                    .redirectErrorStream(true)
+                    .redirectOutput(tmpOut.toFile())
+                    .start();
 
-        if (!out.contains("at(1,")) return Optional.empty();
+            if (!p.waitFor(15, TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                return Optional.empty();
+            }
+            String out = Files.readString(tmpOut);
 
-        int[] celle = new int[16];
-        Matcher m = AT.matcher(out);
-        while (m.find()) {
-            int r = Integer.parseInt(m.group(1));
-            int c = Integer.parseInt(m.group(2));
-            celle[r * 4 + c] = Integer.parseInt(m.group(3));
+            if (!out.contains("at(1,")) return Optional.empty();
+
+            int[] celle = new int[16];
+            Matcher m = AT.matcher(out);
+            while (m.find()) {
+                int r = Integer.parseInt(m.group(1));
+                int c = Integer.parseInt(m.group(2));
+                celle[r * 4 + c] = Integer.parseInt(m.group(3));
+            }
+            return Optional.of(Board.of(celle));
+        } finally {
+            if (p != null && p.isAlive()) p.destroyForcibly();
+            Files.deleteIfExists(tmpIn);
+            Files.deleteIfExists(tmpOut);
         }
-        return Optional.of(Board.of(celle));
     }
 
     private static Board boardCasuale(Random rnd) {

@@ -329,6 +329,43 @@ class AspSolverTest {
     }
 
     /**
+     * Il modello avversariale e' un'altra risorsa ASP concatenata alla prima:
+     * l'unica cosa che il test puo' garantire e' che i due file combacino e
+     * producano ancora una mossa applicabile. Se la sovrapposizione andasse
+     * fuori sintassi, o si scontrasse col programma base, qui si vedrebbe.
+     */
+    @Test
+    void il_modello_avversariale_risponde_con_una_mossa_applicabile() {
+        assumeTrue(dlvDisponibile(), "DLV2 non installato");
+        Board b = Board.of(1,1,2,3, 2,2,3,4, 3,3,4,5, 0,0,0,1);
+
+        SolverOutcome o = new AspSolver(1, Duration.ofSeconds(20), true).bestMove(b);
+
+        assertEquals(SolverStatus.OK, o.status());
+        assertTrue(o.move().isPresent());
+        assertTrue(b.move(o.move().get()).moved(),
+                "il modello avversariale ha proposto una mossa illegale: " + o.move().get());
+    }
+
+    /**
+     * Board dove ogni mossa lascia all'avversario una casella che chiude la
+     * partita: il modello lineare non lo vede a nessuna profondita', quello
+     * avversariale deve continuare comunque a proporre la mossa meno peggio
+     * invece di dichiarare "nessuna soluzione".
+     */
+    @Test
+    void il_modello_avversariale_gioca_anche_quando_ogni_mossa_e_perdente() {
+        assumeTrue(dlvDisponibile(), "DLV2 non installato");
+        Board b = Board.of(1,2,3,4, 5,6,7,8, 9,10,1,2, 3,4,5,0);
+        assertTrue(b.hasMoves());
+
+        SolverOutcome o = new AspSolver(1, Duration.ofSeconds(20), true).bestMove(b);
+
+        assertEquals(SolverStatus.OK, o.status());
+        assertTrue(o.move().isPresent());
+    }
+
+    /**
      * TIMEOUT era l'unico stato mai asserito da un test, pur essendo quello che
      * l'utente incontra piu' spesso quando la macchina e' carica.
      */

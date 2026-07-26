@@ -9,6 +9,11 @@
 % dipende da at(T) attraverso i ranghi e gli aggregati ricorsivi con la
 % testa sono vietati. La formulazione e' gia' validata: non "semplificarla"
 % rimettendo #count senza rimisurare.
+%
+% NB2: nessun peso di weak constraint deve poter diventare NEGATIVO. Un
+% "C=K-N" va sempre accoppiato a un dominio di N che si ferma a K, altrimenti
+% DLV2 riporta un costo che non e' quello scritto e l'ottimo che restituisce
+% non e' quello che si crede di aver chiesto.
 % ============================================================
 
 idx(0..3).

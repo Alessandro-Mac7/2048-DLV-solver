@@ -54,13 +54,19 @@ scnt(T,D,L,K1,N)  :- scnt(T,D,L,K,N), not soc(T,D,L,K), K1=K+1, K1<=3.
 srank(T,D,L,K,N)  :- soc(T,D,L,K), scnt(T,D,L,K,N).
 
 % ---- stato successivo
-% L'indirezione esito -> at non e' decorativa: la sovrapposizione avversariale
-% deve poter infilare una tessera FRA la mossa e lo stato successivo. Senza di
-% essa "cella libera dopo la mossa" si leggerebbe da at, che a sua volta
-% conterrebbe la tessera infilata, e il ciclo negativo renderebbe ogni spawn
-% privo di supporto: nessuna tessera verrebbe mai piazzata.
+% Due indirezioni, entrambe al servizio della sovrapposizione avversariale:
+%
+% esito -> at, perche' l'avversario deve poter infilare una tessera FRA la
+% mossa e lo stato successivo. Senza di essa "cella libera dopo la mossa" si
+% leggerebbe da at, che a sua volta conterrebbe la tessera infilata, e il
+% ciclo negativo lascerebbe ogni spawn privo di supporto: nessuna tessera
+% verrebbe mai piazzata.
+%
+% succ al posto di T1=T+1, perche' con l'avversario il tempo non e' piu' una
+% catena ma un albero: la sovrapposizione fornisce i propri archi.
+succ(T,T1) :- step(T), T1=T+1, time(T1), not spawnEsplicito.
 esito(T1,R,C,E) :- surv(T,D,L,K,E), srank(T,D,L,K,J), lin(D,R,C,L,J),
-                   move(T,D), T1=T+1, time(T1).
+                   move(T,D), succ(T,T1).
 at(T,R,C,E) :- esito(T,R,C,E).
 
 % ---- legalita': deve esserci un merge o uno scorrimento
@@ -115,7 +121,8 @@ costoCarico(15,121). costoCarico(16,144).
 % solver rifiuterebbe di muovere invece di giocare la meno peggio.
 minLibere(2).
 margineIniziale :- minLibere(K), piene(0,P), 16-P > K.
-:- margineIniziale, minLibere(K), time(T), T>0, carico(T,M), M > 16-K.
+:- margineIniziale, minLibere(K), time(T), T>0, carico(T,M), M > 16-K,
+   not spawnEsplicito.
 
 maxstato(T,E) :- time(T), domE(E), #max{E1 : at(T,_,_,E1)} = E.
 inangolo(T)   :- at(T,0,0,E), maxstato(T,E).
@@ -132,8 +139,14 @@ nmerge(N) :- domM(N), #count{T,D,L,K : mrg(T,D,L,K)} = N.
 % T=0 e' escluso: e' la board data, identica per ogni piano candidato, quindi
 % aggiungerebbe solo una costante. Il termine discriminante T serve a far
 % SOMMARE i passi invece di collassarli in uno.
+%
+% Tutta questa sezione somma i costi lungo una catena di stati. Con
+% l'avversario il tempo e' un albero e il costo giusto e' il MASSIMO sui rami,
+% non la somma: da qui il not spawnEsplicito, che spegne questi obiettivi e
+% lascia il campo a quelli di adversary.dlv2.
 % ============================================================
-:~ time(T), T>0, not inangolo(T).             [1@4, T]
-:~ time(T), T>0, carico(T,M), costoCarico(M,W). [W@3, T]
-:~ time(T), T>0, disordine(T,N).              [N@2, T]
-:~ nmerge(N), C=32-N.                         [C@1]
+:~ time(T), T>0, not inangolo(T), not spawnEsplicito.  [1@4, T]
+:~ time(T), T>0, carico(T,M), costoCarico(M,W),
+   not spawnEsplicito.                                 [W@3, T]
+:~ time(T), T>0, disordine(T,N), not spawnEsplicito.   [N@2, T]
+:~ nmerge(N), C=32-N, not spawnEsplicito.              [C@1]

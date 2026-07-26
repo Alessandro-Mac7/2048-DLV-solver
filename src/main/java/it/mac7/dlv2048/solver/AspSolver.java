@@ -31,6 +31,7 @@ import java.util.function.Supplier;
 public final class AspSolver implements Solver {
 
     private static final String RISORSA = "/asp/plan.dlv2";
+    private static final String RISORSA_AVVERSARIO = "/asp/adversary.dlv2";
 
     /** Oltre questa profondita' il guadagno non ripaga il costo: serve solo da tetto. */
     public static final int ORIZZONTE_MAX_DEFAULT = 8;
@@ -46,6 +47,13 @@ public final class AspSolver implements Solver {
     private final int horizonMax;
     private final Duration budget;
     private final String programma;
+
+    /**
+     * Con l'avversario ogni mossa apre fino a 16 rami, quindi il costo cresce
+     * come 16^H invece che linearmente: l'orizzonte utile e' un altro ordine di
+     * grandezza piu' corto. E' un modello alternativo, non un'aggiunta.
+     */
+    private final boolean avversario;
 
     /** Come ritrovare il binario. Interrogato di nuovo finche' l'esito e' vuoto. */
     private final Supplier<Optional<Path>> localizzatore;
@@ -71,11 +79,21 @@ public final class AspSolver implements Solver {
         this(horizonMax, budget, () -> binary);
     }
 
+    /** Modello avversariale: la tessera casuale diventa una scelta ostile. */
+    public AspSolver(int horizonMax, Duration budget, boolean avversario) {
+        this(horizonMax, budget, DlvBinary::locate, DlvRunner::run, avversario);
+    }
+
     AspSolver(int horizonMax, Duration budget, Supplier<Optional<Path>> localizzatore) {
-        this(horizonMax, budget, localizzatore, DlvRunner::run);
+        this(horizonMax, budget, localizzatore, DlvRunner::run, false);
     }
 
     AspSolver(int horizonMax, Duration budget, Supplier<Optional<Path>> localizzatore, Esecutore esecutore) {
+        this(horizonMax, budget, localizzatore, esecutore, false);
+    }
+
+    AspSolver(int horizonMax, Duration budget, Supplier<Optional<Path>> localizzatore,
+              Esecutore esecutore, boolean avversario) {
         if (horizonMax < 1) {
             throw new IllegalArgumentException(
                     "orizzonte massimo deve essere >= 1, ricevuto " + horizonMax);
@@ -84,15 +102,18 @@ public final class AspSolver implements Solver {
         this.budget = budget;
         this.localizzatore = localizzatore;
         this.esecutore = esecutore;
-        this.programma = caricaProgramma();
+        this.avversario = avversario;
+        this.programma = avversario
+                ? caricaProgramma(RISORSA) + "\n" + caricaProgramma(RISORSA_AVVERSARIO)
+                : caricaProgramma(RISORSA);
     }
 
-    private static String caricaProgramma() {
-        try (InputStream in = AspSolver.class.getResourceAsStream(RISORSA)) {
-            if (in == null) throw new IllegalStateException("risorsa mancante: " + RISORSA);
+    private static String caricaProgramma(String risorsa) {
+        try (InputStream in = AspSolver.class.getResourceAsStream(risorsa)) {
+            if (in == null) throw new IllegalStateException("risorsa mancante: " + risorsa);
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
-            throw new IllegalStateException("impossibile leggere " + RISORSA, e);
+            throw new IllegalStateException("impossibile leggere " + risorsa, e);
         }
     }
 
@@ -132,7 +153,9 @@ public final class AspSolver implements Solver {
             long inizioLivello = System.nanoTime();
             DlvRunner.DlvResult res = esecutore.run(
                     bin,
-                    programma + "\n" + AspEncoder.facts(board, h),
+                    programma + "\n" + (avversario
+                            ? AspEncoder.factsAvversario(board, h)
+                            : AspEncoder.facts(board, h)),
                     Duration.ofMillis(rimasto)); // solo il residuo, non il budget intero
             costoLivelloPrecedente = elapsed(inizioLivello);
 

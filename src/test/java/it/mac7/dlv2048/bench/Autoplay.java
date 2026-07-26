@@ -56,9 +56,15 @@ public final class Autoplay {
 
     private Autoplay() {}
 
-    /** Esito di una partita. */
+    /**
+     * Esito di una partita. {@code perOrizzonte[h]} conta le mosse decise a
+     * orizzonte h: se un vincolo rigido rende spesso irraggiungibile
+     * l'orizzonte pieno, il solver gioca piu' corto senza dirlo, e la
+     * differenza fra due modelli non sarebbe piu' attribuibile al modello.
+     */
     record Partita(int mosse, int punteggio, int maxEsponente,
-                   int senzaPiano, int errori, long msDlv, int chiamate) {}
+                   int senzaPiano, int errori, long msDlv, int chiamate,
+                   int[] perOrizzonte) {}
 
     public static void main(String[] args) throws Exception {
         Config cfg = Config.parse(args);
@@ -66,8 +72,10 @@ public final class Autoplay {
                 () -> new IllegalStateException("DLV2 non trovato: imposta DLV2_HOME"));
 
         String programma = cfg.programma();
-        System.out.printf("asp=%s partite=%d orizzonte=%d seme=%d thread=%d%n",
-                cfg.aspDescrizione(), cfg.partite, cfg.orizzonte, cfg.seme, cfg.thread);
+        boolean avversario = cfg.avversario;
+        System.out.printf("asp=%s partite=%d orizzonte=%d seme=%d thread=%d avversario=%b%n",
+                cfg.aspDescrizione(), cfg.partite, cfg.orizzonte, cfg.seme, cfg.thread,
+                avversario);
 
         AtomicInteger finite = new AtomicInteger();
         List<Future<Partita>> futuri = new ArrayList<>();
@@ -77,7 +85,7 @@ public final class Autoplay {
             for (int i = 0; i < cfg.partite; i++) {
                 long seme = cfg.seme + i;
                 futuri.add(pool.submit(() -> {
-                    Partita p = gioca(bin, programma, cfg.orizzonte, seme);
+                    Partita p = gioca(bin, programma, cfg.orizzonte, seme, avversario);
                     System.out.printf("  partita seme=%d  max=%d punti=%d mosse=%d "
                             + "senzaPiano=%d errori=%d  (%d/%d)%n",
                             seme, 1 << p.maxEsponente(), p.punteggio(), p.mosse(),
@@ -96,7 +104,8 @@ public final class Autoplay {
      * Una partita completa. Lo stato di vittoria e' deliberatamente ignorato:
      * qui interessa quanto lontano arriva il solver, non se tocca 2048.
      */
-    static Partita gioca(Path bin, String programma, int orizzonte, long seme) {
+    static Partita gioca(Path bin, String programma, int orizzonte, long seme,
+                         boolean avversario) {
         Random rnd = new Random(seme);
         Board board = Board.empty();
         board = conTesseraCasuale(board, rnd);
@@ -104,13 +113,15 @@ public final class Autoplay {
 
         int mosse = 0, punteggio = 0, senzaPiano = 0, errori = 0, chiamate = 0;
         long msDlv = 0;
+        int[] perOrizzonte = new int[orizzonte + 1];
 
         while (board.hasMoves() && mosse < MOSSE_MAX) {
             long t = System.nanoTime();
-            Scelta s = scegli(bin, programma, board, orizzonte);
+            Scelta s = scegli(bin, programma, board, orizzonte, avversario);
             msDlv += (System.nanoTime() - t) / 1_000_000;
             chiamate += s.chiamate();
             errori += s.errori();
+            if (s.orizzonte() > 0) perOrizzonte[s.orizzonte()]++;
 
             Direction d = s.mossa().orElse(null);
             if (d == null || !board.move(d).moved()) {
@@ -128,30 +139,33 @@ public final class Autoplay {
             board = conTesseraCasuale(board, rnd);
         }
         return new Partita(mosse, punteggio, board.maxExponent(),
-                senzaPiano, errori, msDlv, chiamate);
+                senzaPiano, errori, msDlv, chiamate, perOrizzonte);
     }
 
-    private record Scelta(Optional<Direction> mossa, int chiamate, int errori) {}
+    private record Scelta(Optional<Direction> mossa, int chiamate, int errori, int orizzonte) {}
 
     /**
      * Chiede il piano all'orizzonte pieno e scende se non esiste. Rispecchia il
      * comportamento di AspSolver, che conserva l'ultimo livello riuscito: vicino
      * al game over un piano lungo puo' non esistere pur esistendo una mossa.
      */
-    private static Scelta scegli(Path bin, String programma, Board board, int orizzonte) {
+    private static Scelta scegli(Path bin, String programma, Board board, int orizzonte,
+                                 boolean avversario) {
         int chiamate = 0, errori = 0;
         for (int h = orizzonte; h >= 1; h--) {
             chiamate++;
             DlvRunner.DlvResult res = DlvRunner.run(
-                    bin, programma + "\n" + AspEncoder.facts(board, h), TIMEOUT);
+                    bin, programma + "\n" + (avversario
+                            ? AspEncoder.factsAvversario(board, h)
+                            : AspEncoder.facts(board, h)), TIMEOUT);
             if (res.status() != SolverStatus.OK) {
                 errori++;
                 continue;
             }
             Optional<Direction> m = AnswerSetParser.firstMove(res.stdout());
-            if (m.isPresent()) return new Scelta(m, chiamate, errori);
+            if (m.isPresent()) return new Scelta(m, chiamate, errori, h);
         }
-        return new Scelta(Optional.empty(), chiamate, errori);
+        return new Scelta(Optional.empty(), chiamate, errori, 0);
     }
 
     private static Direction primaLegale(Board b) {
@@ -195,6 +209,13 @@ public final class Autoplay {
                 esiti.stream().filter(p -> p.maxEsponente() >= 9).count(), n);
         System.out.printf("tessera >= 1024 in %d/%d partite%n",
                 esiti.stream().filter(p -> p.maxEsponente() >= 10).count(), n);
+        Map<Integer, Integer> orizzonti = new TreeMap<>();
+        for (Partita p : esiti) {
+            for (int h = 1; h < p.perOrizzonte().length; h++) {
+                if (p.perOrizzonte()[h] > 0) orizzonti.merge(h, p.perOrizzonte()[h], Integer::sum);
+            }
+        }
+        System.out.printf("mosse per orizzonte usato: %s%n", orizzonti);
         System.out.printf("senzaPiano=%d errori=%d chiamate=%d  ms/chiamata=%.0f%n",
                 senzaPiano, errori, chiamate, chiamate == 0 ? 0 : (double) msDlv / chiamate);
         System.out.printf("durata reale: %d s%n", secondi);
@@ -206,12 +227,14 @@ public final class Autoplay {
     }
 
     /** Configurazione da riga di comando. */
-    private record Config(Path asp, int partite, int orizzonte, long seme, int thread) {
+    private record Config(Path asp, int partite, int orizzonte, long seme, int thread,
+                          boolean avversario) {
 
         static Config parse(String[] args) {
             Path asp = null;
             int partite = 20, orizzonte = 3, thread = 6;
             long seme = 20260726L;
+            boolean avversario = false;
             for (String a : args) {
                 String[] kv = a.split("=", 2);
                 switch (kv[0]) {
@@ -220,15 +243,22 @@ public final class Autoplay {
                     case "--orizzonte" -> orizzonte = Integer.parseInt(kv[1]);
                     case "--seme" -> seme = Long.parseLong(kv[1]);
                     case "--thread" -> thread = Integer.parseInt(kv[1]);
+                    case "--avversario" -> avversario = true;
                     default -> throw new IllegalArgumentException("opzione ignota: " + kv[0]);
                 }
             }
-            return new Config(asp, partite, orizzonte, seme, thread);
+            return new Config(asp, partite, orizzonte, seme, thread, avversario);
         }
 
         String programma() throws Exception {
-            if (asp != null) return Files.readString(asp, StandardCharsets.UTF_8);
-            try (InputStream in = Autoplay.class.getResourceAsStream("/asp/plan.dlv2")) {
+            String base = asp != null
+                    ? Files.readString(asp, StandardCharsets.UTF_8)
+                    : risorsa("/asp/plan.dlv2");
+            return avversario ? base + "\n" + risorsa("/asp/adversary.dlv2") : base;
+        }
+
+        private static String risorsa(String nome) throws Exception {
+            try (InputStream in = Autoplay.class.getResourceAsStream(nome)) {
                 return new String(in.readAllBytes(), StandardCharsets.UTF_8);
             }
         }

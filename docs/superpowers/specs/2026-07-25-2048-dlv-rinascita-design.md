@@ -14,6 +14,7 @@ DLV come cervello che ragiona su un orizzonte profondo.
 | Ambito | Decisione |
 |---|---|
 | Ruolo di DLV | Cervello del solver, orizzonte profondo (non ibrido, non solo valutatore) |
+| Profondità | Approfondimento iterativo governato dal budget, non orizzonte fisso |
 | Budget per mossa | 2-3 s, modalità suggerimento (tasto `S`) |
 | Grafica | Swing modernizzato (FlatLaf), non riscrittura JavaFX |
 | Runtime ASP | DLV2 nativo arm64 |
@@ -39,8 +40,18 @@ superficie (75 ms a H=1) ma **più veloce in profondità** (1467 ms a H=7 contro
 manutenzione, esecuzione nativa senza Docker e sintassi ASP-Core-2 standard,
 non dalla velocità pura.
 
-**Orizzonte di progetto: H=6** (~1 s, dentro il budget con margine), contro
-l'orizzonte 1 dell'implementazione attuale.
+**Orizzonte di progetto: approfondimento iterativo**, contro l'orizzonte 1
+dell'implementazione di partenza.
+
+> **Corretto in corso d'opera.** Questo documento fissava H=6 sulla base dei
+> tempi qui sopra, misurati su **due sole board**. Non era un campione: in
+> partita reale H=6 con budget 3 s fallisce il **45%** delle volte (9 timeout su
+> 20 pressioni, media 2239 ms). Il solver parte quindi da orizzonte 1 e sale
+> finché il budget regge, conservando l'ultimo piano riuscito. Misurato dopo la
+> modifica: **0 fallimenti su 30** chiamate, orizzonti raggiunti tipicamente 4-7.
+> Partire da 1 chiude anche un difetto latente: il programma ASP pretende una
+> mossa legale a ogni passo, quindi vicino al game over un piano lungo può non
+> esistere pur esistendo una mossa.
 
 ### Il limite strutturale scoperto
 
@@ -162,7 +173,9 @@ Inoltre:
   superato;
 - casi noti di merge: `[2,2,4,8]` a sinistra dà `[4,4,8]`, il doppio merge
   `[2,2,2,2]` dà `[4,4]` e non `[8]`;
-- regressione sui tempi: H=6 deve restare entro il budget.
+- regressione sui tempi: il budget totale va rispettato a ogni chiamata, e
+  20 suggerimenti consecutivi su una partita reale non devono produrre
+  fallimenti quando una mossa legale esiste.
 
 ## Quirk del codice attuale da correggere
 

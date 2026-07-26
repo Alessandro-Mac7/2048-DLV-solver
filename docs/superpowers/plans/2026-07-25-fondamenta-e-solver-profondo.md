@@ -2,7 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Sostituire la toolchain JDLV morta con una pipeline DLV2 controllata dal codice, e portare il solver da orizzonte 1 a orizzonte 6.
+**Goal:** Sostituire la toolchain JDLV morta con una pipeline DLV2 controllata dal codice, e portare il solver da orizzonte 1 a un orizzonte profondo.
+
+> **Nota a posteriori.** Questo piano fu scritto per un orizzonte **fisso a 6**. In corso d'opera la misura su partita reale ha mostrato che falliva il 45% delle volte, e si è passati all'**approfondimento iterativo**: si parte da 1, si sale finché il budget regge, si conserva l'ultimo piano riuscito. Dove sotto si legge "orizzonte 6", il codice implementa l'approfondimento iterativo.
 
 **Architecture:** Un `Board` immutabile con la meccanica di 2048 espressa una volta sola (oggi duplicata in `move`/`moveDLV`). Il solver diventa tre pezzi separabili — `AspEncoder` (board → fatti ASP), `DlvRunner` (processo esterno con timeout), `AnswerSetParser` (output → `Direction`) — con il programma ASP come risorsa di testo versionata invece che generato da un plugin Xtext. Un property test confronta la meccanica Java con quella ASP su board casuali: è ciò che impedisce alle due di divergere.
 
@@ -17,7 +19,7 @@
 - Il binario DLV2 **non va committato**. URL: `https://www.mat.unical.it/DLV2/releases/2.1.2/dlv-2.1.2-arm64`. SHA-256 atteso: `b169b75dd7ee780b14ebf03158804ec010a71f27e532a3c9204b7ab01c3c92d7`. Il certificato TLS di `mat.unical.it` è scaduto il 10/12/2025, quindi la verifica del checksum è obbligatoria, non opzionale.
 - Rappresentazione delle tessere: **esponenti** (`e`), valore reale = `1 << e`, `0` = vuoto. Vale sia in Java sia in ASP.
 - Flag DLV2 di produzione: `--silent --printonlyoptimum`. **`-n=1` non limita l'enumerazione degli ottimi** e va evitato.
-- Orizzonte di default: **6**. Budget: 2-3 s per mossa.
+- Orizzonte: **approfondimento iterativo** da 1 fino a un tetto di 8. Budget: 3 s per mossa.
 - Lingua di commenti e stringhe utente: italiano (coerente con l'esistente).
 
 ---
@@ -1519,7 +1521,6 @@ divergere in silenzio e il solver ragionerebbe su un gioco diverso."
 
 **Files:**
 - Create: `README.md`
-- Modify: `CLAUDE.md`
 
 **Interfaces:**
 - Consumes: tutto quanto sopra
@@ -1587,9 +1588,9 @@ modello la board non si riempie mai. La modellazione del rischio e' il prossimo
 passo previsto.
 ```
 
-- [ ] **Step 2: Aggiornare `CLAUDE.md`**
+- [ ] **Step 2: (omesso deliberatamente)**
 
-Il `CLAUDE.md` attuale descrive la toolchain JDLV, che non esiste più. Riscrivere le sezioni "Build and run", "Architecture" e "Editing the ASP program" per riflettere Maven, `Board`, la pipeline `AspEncoder`/`DlvRunner`/`AnswerSetParser` e la risorsa `plan.dlv2`. Mantenere e aggiornare la sezione sui vincoli DLV1/DLV2 e sul flag `--printonlyoptimum`, che restano trappole reali.
+Questo passo prevedeva di aggiornare un file di appunti per assistenti che il progetto ha poi deciso di non versionare. È stato omesso: le stesse informazioni (vincoli DLV1 contro DLV2, obbligatorietà di `--printonlyoptimum`) vivono ora nei commenti di `plan.dlv2`, `DlvRunner` e `AspSolver`, cioè accanto al codice che le rende vere.
 
 - [ ] **Step 3: Verifica finale end-to-end**
 
@@ -1604,8 +1605,8 @@ Expected: BUILD SUCCESS, jar prodotto, tutti i test verdi.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add README.md CLAUDE.md
-git commit -m "docs: README e CLAUDE.md allineati alla nuova toolchain"
+git add README.md
+git commit -m "docs: README allineato alla nuova toolchain"
 ```
 
 ---

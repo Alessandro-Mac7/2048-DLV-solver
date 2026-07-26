@@ -126,6 +126,37 @@ Il vincolo dice una cosa che nessun altro termine diceva: siccome
 `piene(T) = piene(0) - merge fatti finora`, richiedere un carico basso equivale
 a richiedere **almeno tanti merge quanti lo spawn riempie**.
 
+#### Quanto serve davvero: misurato, e non conclusivo
+
+Partite complete giocate dal solver con `bench/Autoplay`, confronto appaiato
+sugli stessi semi contro il modello precedente (che valutava solo lo stato
+finale):
+
+| orizzonte fisso | coppie | differenza media | t |
+|---|---|---|---|
+| 2 | 48 | +74 punti | 0,14 |
+| 4 | 12 | +2825 punti | 2,31 |
+
+**A orizzonte 2 il modello di rischio non serve**, e questo e' stabilito: 48
+partite appaiate, intervallo di confidenza `[-973, +1121]`, vittorie 25 su 48
+contro le 24 attese dal caso. Ha senso: un termine che conta le tessere
+aggiunte lungo il piano non ha nulla da contare se il piano e' di due mosse.
+
+**A orizzonte 4 l'evidenza punta in positivo ma non e' stabilita.** La soglia di
+significativita' al 5% con 11 gradi di liberta' e' 2,20 e il valore misurato e'
+2,31: passa per un pelo. Soprattutto, i due lotti che lo compongono sono
+disomogenei — il primo (8 coppie) da' +4457, il secondo (4 coppie) da' +60. Piu'
+disomogeneita' e significativita' marginale insieme sono il profilo tipico di un
+risultato che non si replica. Servono piu' partite prima di considerarlo
+acquisito.
+
+Il costo non e' un problema: 364 ms per chiamata contro 360 ms del modello
+precedente, cioe' invariato.
+
+Quello che si puo' affermare senza riserve e' che il modello e' piu' **corretto**
+— vede il riempimento futuro, che prima era invisibile a qualunque profondita' —
+non che sia piu' **forte**.
+
 ### Modello avversariale (opzionale)
 
 `src/main/resources/asp/adversary.dlv2` si concatena al programma base e

@@ -116,7 +116,14 @@ altraLegale(T) :- at(T,R,C,_), vuota(T,R,C2), C2<C.
 altraLegale(T) :- at(T,R,C,_), vuota(T,R2,C), R2<R.
 altraLegale(T) :- at(T,R,C,E), C1=C+1, at(T,R,C1,E).
 altraLegale(T) :- at(T,R,C,E), R1=R+1, at(T,R1,C,E).
-:- move(T,D), vietata(D), altraLegale(T).
+%
+% meccanicaNuda/0 non e' un fatto di questo programma e in esercizio non lo
+% asserisce nessuno: e' la porta di servizio di MeccanicaCoerenteTest, che
+% inchioda una per una TUTTE le direzioni per confrontare board Java e board
+% ASP. Quel confronto riguarda lo scivolamento e la fusione, non la strategia,
+% e senza la porta la restrizione rifiuterebbe proprio la direzione inchiodata
+% lasciando il test senza stato da confrontare.
+:- move(T,D), vietata(D), altraLegale(T), not meccanicaNuda.
 
 % ============================================================
 % VALUTAZIONE DELLO STATO A OGNI PASSO

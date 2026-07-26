@@ -100,6 +100,11 @@ class MeccanicaCoerenteTest {
 
         int passi = sequenza.length;
         StringBuilder istanza = new StringBuilder(AspEncoder.facts(b, passi));
+        // il programma non gioca "giu'" quando esiste un'alternativa legale: e'
+        // strategia, e qui si confronta la meccanica. Senza questo fatto la
+        // restrizione rifiuterebbe la direzione inchiodata qui sotto e il
+        // confronto perderebbe un quarto dei casi proprio dove serve.
+        istanza.append("meccanicaNuda.\n");
         for (int t = 0; t < passi; t++) {
             istanza.append(":- not move(").append(t).append(',')
                    .append(sequenza[t].aspCode()).append(").\n");

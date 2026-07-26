@@ -56,11 +56,11 @@ Ogni gruppo si misura appaiato sugli stessi semi contro `main`
 il **t appaiato**, non la sola media. Con n=12 e ds delle differenze ~3600
 servono ~2500 punti per la significativita' al 5%.
 
-- [ ] G1: monotonia verticale, livelli invariati.
-- [ ] G2: G1 + ristrutturazione livelli + levigatezza + ancoraggio graduato.
-- [ ] G3: G2 + merge pesati.
-- [ ] G4: G3 + restrizione del ventaglio (+ test di coerenza).
-- [ ] G5: G4 + serpente.
+- [x] G1: monotonia verticale, livelli invariati.
+- [x] G2: G1 + ristrutturazione livelli + levigatezza + ancoraggio graduato.
+- [x] G3: G2 + merge pesati.
+- [x] G4: G3 + restrizione del ventaglio (+ test di coerenza).
+- [x] G5: G4 + serpente.
 - [ ] Conferma della configurazione scelta su un **seme indipendente**.
 - [ ] Suite completa con `DLV2_HOME`, README aggiornato con i numeri veri,
       compresi quelli negativi.

@@ -157,6 +157,97 @@ Quello che si puo' affermare senza riserve e' che il modello e' piu' **corretto*
 — vede il riempimento futuro, che prima era invisibile a qualunque profondita' —
 non che sia piu' **forte**.
 
+### Come il modello valuta una posizione
+
+Tre livelli lessicografici, dal piu' importante:
+
+| livello | termine | peso |
+|---|---|---|
+| 3 | **carico**: riempimento reale piu' le tessere che il gioco aggiungera' | `M^2` per passo |
+| 2 | **monotonia**: coppie adiacenti che crescono allontanandosi da (0,0) | 4 per coppia |
+| 2 | **levigatezza**: somma dei salti di esponente fra caselle adiacenti | 1 per unita' di salto |
+| 2 | **ancoraggio**: distanza di Manhattan del massimo da (0,0) | 3 per casella |
+| 1 | **merge**: somma degli esponenti fusi | complemento a 576 |
+
+I livelli lessicografici sono uno strumento brutale — il livello sotto conta
+solo a parita' esatta di quello sopra — e con quattro livelli un guadagno di un
+punto di riempimento batteva qualunque miglioramento di monotonia. Riempimento e
+merge restano su livelli propri perche' dicono cose di natura diversa: riempirsi
+e' fatale, i merge sono il guadagno e devono decidere solo a parita' di
+posizione. I criteri **posizionali** invece descrivono tutti la stessa cosa da
+angoli diversi, quanto la board e' pettinata verso l'angolo, e ordinarli fra loro
+sarebbe arbitrario: stanno in un solo livello con pesi relativi, come fanno gli
+AI forti di 2048, che valutano una somma pesata e non una gerarchia.
+
+Due dettagli costati misure e non ovvi dal codice:
+
+- Il **premio dei merge** e' scritto come `18*(32-N)` piu' la somma di `(18-E)`
+  su ogni merge. E' algebricamente `576 - somma degli esponenti fusi`, ma la
+  versione diretta con `#sum{E,T,D,L,K : mrg(...), comp(...,E)}` costa **17,5 s
+  contro 5,4 s** sulla stessa board a orizzonte 6, perche' l'aggregato costringe
+  il grounder a istanziare anche l'esponente. Il fattore 18 sul conteggio non e'
+  una taratura: senza, ogni merge in piu' aggiungerebbe `18-E > 0` al costo e il
+  modello preferirebbe non fondere affatto.
+- L'**ancoraggio** e' graduato e valutato a ogni passo. Il criterio binario
+  precedente, valutato solo a fine piano, non costava nulla ai piani che
+  scacciavano il massimo dall'angolo a meta' strada; metterlo a ogni passo al
+  livello piu' alto invece schiacciava tutto il resto (misurato in precedenza: a
+  H=3 la media crollava da ~5300 a ~3200). Serviva graduarlo **e** abbassarlo.
+
+### La restrizione del ventaglio
+
+Il programma non gioca mai "giu'" — la direzione che stacca il massimo
+dall'angolo di ancoraggio — quando esiste un'alternativa legale. Lo spazio di
+ricerca passa da `4^H` a `3^H`.
+
+Il tempo di una singola chiamata a DLV2, su due board di meta' partita:
+
+| board | riferimento | valutazione nuova | + restrizione | + serpente |
+|---|---|---|---|---|
+| A, orizzonte 6 | 2,6 s | 5,4 s | **1,9 s** | 2,2 s |
+| B, orizzonte 6 | 3,1 s | 12,6 s | **2,8 s** | 3,5 s |
+| A, orizzonte 7 | 7,9 s | 15,9 s | **3,4 s** | 4,0 s |
+| A, orizzonte 8 | 23,9 s | - | **5,5 s** | 6,5 s |
+| A, orizzonte 9 | 39,8 s | - | **9,1 s** | - |
+| A, orizzonte 10 | 113,8 s | - | **12,7 s** | - |
+
+I quattro criteri posizionali in piu' costano da soli un fattore 2-4; la
+restrizione lo restituisce tutto e lascia il programma **piu' veloce** del
+riferimento, e il margine cresce con l'orizzonte: 1,4x a 6, 2,3x a 7, 4,3x a 8,
+8,9x a 10. E' il comportamento atteso da `4^H` contro `3^H`, dove il rapporto e'
+`(4/3)^H`.
+
+Conta piu' di quanto sembri: il solver in esercizio non usa un orizzonte fisso
+ma un budget di 3 secondi, quindi un modello piu' caro non gioca peggio a parita'
+di profondita', gioca **meno profondo**. Su questa board, entro 3 secondi, il
+riferimento chiude l'orizzonte 6 e non il 7; il modello nuovo chiude il 7.
+
+La proprieta' che non e' negoziabile: dove una mossa legale esiste, il programma
+deve restare coerente. Due cose la garantiscono, e nessuna delle due e' ovvia.
+
+- `legale/2` **non e' utilizzabile** per sapere se un'altra direzione e'
+  giocabile: passa da `lat/5`, che ha `move(T,D)` nel corpo, quindi esiste solo
+  per la direzione indovinata. Serve un test indipendente dal guess, ed e'
+  `altraLegale/1`.
+- Quel test deve sotto-approssimare o essere esatto. Sotto-approssimare fa solo
+  perdere potatura; **sovra-approssimare** vieterebbe "giu'" credendo che esista
+  un'alternativa inesistente, e renderebbe il programma incoerente proprio dove
+  serve muovere. `altraLegale/1` e' esatto e vale "sinistra oppure su sono
+  legali": se una coppia fondibile e' piu' lontana di una casella c'e' per forza
+  un buco fra le due, e allora la regola sullo scorrimento ha gia' concluso.
+
+E' lo stesso errore in cui era caduto l'albero avversariale, dove `step/1` era
+diventato derivato dentro una componente con negazione ricorsiva e DLV2
+rispondeva "nessuna mossa" su board con quattro mosse legali. Qui `step/1` resta
+un fatto del chiamante, e `VentaglioRistrettoTest` verifica su oltre cento board
+vive che una mossa applicabile arrivi sempre.
+
+`MeccanicaCoerenteTest` inchioda a una a una tutte e quattro le direzioni per
+confrontare la board Java con quella ASP: la restrizione rifiuterebbe proprio la
+direzione inchiodata. Il fatto `meccanicaNuda`, che nessuno asserisce in
+esercizio, la scavalca — quel test riguarda scivolamento e fusione, non
+strategia.
+
 ### Modello avversariale (opzionale)
 
 `src/main/resources/asp/adversary.dlv2` si concatena al programma base e

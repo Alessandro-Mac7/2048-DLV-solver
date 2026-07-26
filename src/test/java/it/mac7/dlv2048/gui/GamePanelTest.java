@@ -182,6 +182,29 @@ class GamePanelTest {
     }
 
     /**
+     * Variante della stessa guardia per un percorso diverso: non l'utente che
+     * muove, ma una partita nuova avviata col mouse mentre DLV sta ancora
+     * pensando. La mossa vecchia non deve atterrare sulla partita nuova.
+     */
+    @Test
+    void una_partita_riavviata_durante_il_calcolo_scarta_l_esito() throws Exception {
+        Game game = new Game(new SolverLentoSenzaMossa());
+        game.inizia();
+        GamePanel panel = new GamePanel(game);
+
+        premiSSullEdt(panel);
+
+        Board prima = game.board();
+        SwingUtilities.invokeAndWait(game::inizia);
+        assertNotEquals(prima, game.board(), "precondizione: il riavvio deve cambiare la board");
+
+        attendiFineRicerca(panel);
+
+        assertNull(panel.ultimoEsitoSolver(),
+                "l'esito della partita precedente non va applicato a quella nuova");
+    }
+
+    /**
      * Regressione: l'indice del colore era log2(valore)+1 su una tabella di 12
      * elementi, quindi una tessera 2048 (log2 = 11) chiedeva l'indice 12 e
      * faceva saltare drawTile con ArrayIndexOutOfBounds. Oggi il caso e'

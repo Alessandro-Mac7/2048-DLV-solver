@@ -72,35 +72,61 @@ public final class Board {
     /**
      * Applica una mossa. La meccanica e' definita QUI e in nessun altro punto:
      * il programma ASP la replica e un property test verifica che coincidano.
+     *
+     * <p>Oltre alla board risultante traccia anche da dove a dove si sposta
+     * ogni tessera (serve solo alla grafica): l'algoritmo di compattazione e
+     * merge e' lo stesso di sempre, si porta dietro in piu' la posizione di
+     * origine invece di limitarsi al valore.
      */
     public MoveResult move(Direction d) {
         int[] next = new int[CELLS];
         int gained = 0;
+        List<TileMove> movimenti = new ArrayList<>();
 
         for (int line = 0; line < SIZE; line++) {
             int[] input = new int[SIZE];
+            int[] inputRow = new int[SIZE];
+            int[] inputCol = new int[SIZE];
             for (int p = 0; p < SIZE; p++) {
                 int[] rc = project(d, line, p);
                 input[p] = exponentAt(rc[0], rc[1]);
+                inputRow[p] = rc[0];
+                inputCol[p] = rc[1];
             }
 
             int[] slid = new int[SIZE];
             int write = 0;
             int read = 0;
-            // compattazione + merge greedy dall'estremo di arrivo
+            // compattazione + merge greedy dall'estremo di arrivo, con la posizione di origine al seguito
             int[] compact = new int[SIZE];
+            int[] compactRow = new int[SIZE];
+            int[] compactCol = new int[SIZE];
             int n = 0;
             for (int p = 0; p < SIZE; p++) {
-                if (input[p] != 0) compact[n++] = input[p];
+                if (input[p] != 0) {
+                    compact[n] = input[p];
+                    compactRow[n] = inputRow[p];
+                    compactCol[n] = inputCol[p];
+                    n++;
+                }
             }
             while (read < n) {
+                int[] dest = project(d, line, write);
                 if (read + 1 < n && compact[read] == compact[read + 1]) {
                     int merged = compact[read] + 1;
-                    slid[write++] = merged;
+                    slid[write] = merged;
                     gained += 1 << merged;
+                    movimenti.add(new TileMove(compactRow[read], compactCol[read], dest[0], dest[1],
+                            compact[read], merged, true));
+                    movimenti.add(new TileMove(compactRow[read + 1], compactCol[read + 1], dest[0], dest[1],
+                            compact[read + 1], merged, true));
+                    write++;
                     read += 2;               // la tessera fusa non si rifonde
                 } else {
-                    slid[write++] = compact[read];
+                    slid[write] = compact[read];
+                    movimenti.add(new TileMove(compactRow[read], compactCol[read], dest[0], dest[1],
+                            compact[read], compact[read], false));
+                    write++;
                     read++;
                 }
             }
@@ -112,7 +138,7 @@ public final class Board {
         }
 
         boolean moved = !Arrays.equals(cells, next);
-        return new MoveResult(new Board(next), gained, moved);
+        return new MoveResult(new Board(next), gained, moved, List.copyOf(movimenti));
     }
 
     /**

@@ -1,6 +1,7 @@
 package it.mac7.dlv2048.core;
 
 import org.junit.jupiter.api.Test;
+import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class BoardTest {
@@ -54,6 +55,56 @@ class BoardTest {
         b.move(Direction.LEFT);
         assertEquals(1, b.exponentAt(0, 0));
         assertEquals(1, b.exponentAt(0, 1));
+    }
+
+    /**
+     * I movimenti servono solo alla grafica (animazione di scivolamento): la
+     * board risultante e' gia' coperta dagli altri test, qui si verifica solo
+     * la tracciatura da dove a dove si sposta ogni tessera.
+     */
+    @Test
+    void uno_scorrimento_senza_merge_riporta_partenza_e_arrivo_di_ogni_tessera() {
+        // . . 2 . -> 2 . . .  (colonna 2, riga 0, scivola in colonna 0)
+        Board b = board(0,0,1,0, 0,0,0,0, 0,0,0,0, 0,0,0,0);
+        MoveResult r = b.move(Direction.LEFT);
+        assertEquals(1, r.movimenti().size());
+        TileMove m = r.movimenti().get(0);
+        assertEquals(0, m.fromRow());
+        assertEquals(2, m.fromCol());
+        assertEquals(0, m.toRow());
+        assertEquals(0, m.toCol());
+        assertFalse(m.fuso());
+        assertEquals(1, m.esponenteIniziale());
+        assertEquals(1, m.esponenteFinale());
+    }
+
+    @Test
+    void un_merge_produce_due_movimenti_sulla_stessa_destinazione() {
+        // 2 2 . . -> 4 . . .
+        Board b = board(1,1,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0);
+        MoveResult r = b.move(Direction.LEFT);
+        assertEquals(2, r.movimenti().size());
+        for (TileMove m : r.movimenti()) {
+            assertTrue(m.fuso());
+            assertEquals(0, m.toRow());
+            assertEquals(0, m.toCol());
+            assertEquals(1, m.esponenteIniziale());
+            assertEquals(2, m.esponenteFinale());
+        }
+        List<Integer> partenze = r.movimenti().stream().map(TileMove::fromCol).sorted().toList();
+        assertEquals(List.of(0, 1), partenze);
+    }
+
+    @Test
+    void una_tessera_ferma_ha_partenza_e_arrivo_coincidenti() {
+        Board b = board(1,2,3,4, 0,0,0,0, 0,0,0,0, 0,0,0,0);
+        MoveResult r = b.move(Direction.LEFT);
+        assertEquals(4, r.movimenti().size());
+        for (TileMove m : r.movimenti()) {
+            assertEquals(m.fromRow(), m.toRow());
+            assertEquals(m.fromCol(), m.toCol());
+            assertFalse(m.fuso());
+        }
     }
 
     private static int[] riga(Board b, int r) {

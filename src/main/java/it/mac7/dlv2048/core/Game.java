@@ -36,20 +36,25 @@ public final class Game {
     }
 
     public boolean muovi(Direction d) {
-        if (stato != GameState.RUNNING) return false;
+        return muoviDettagliato(d).moved();
+    }
+
+    /** Come {@link #muovi}, ma restituisce anche i movimenti di ogni tessera per l'animazione. */
+    public MoveResult muoviDettagliato(Direction d) {
+        if (stato != GameState.RUNNING) return new MoveResult(board, 0, false, List.of());
         MoveResult r = board.move(d);
-        if (!r.moved()) return false;
+        if (!r.moved()) return r;
 
         board = r.board();
         punteggio += r.gainedScore();
 
         if (board.maxExponent() >= ESPONENTE_VITTORIA) {
             stato = GameState.WON;
-            return true;
+            return r;
         }
         aggiungiTesseraCasuale();
         if (!board.hasMoves()) stato = GameState.OVER;
-        return true;
+        return r;
     }
 
     /** Chiede a DLV la mossa migliore. Non muove: decide il chiamante. */

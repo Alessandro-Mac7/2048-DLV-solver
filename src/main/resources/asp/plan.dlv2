@@ -88,7 +88,6 @@ legale(T,D) :- locc(T,D,L,P), lrank(T,D,L,P,K), K < P.
 dom16(0..16).
 dom24(0..24).
 domE(1..17).
-domM(0..32).
 
 % I passi del piano: gli stati che stanno sulla catena. La sovrapposizione
 % avversariale aggiunge altri time(N) fuori dalla catena, e i costi sommati
@@ -141,7 +140,20 @@ margineIniziale :- minLibere(K), piene(0,P), 16-P > K.
 :- margineIniziale, minLibere(K), passo(T), carico(T,M), M > 16-K.
 
 maxstato(T,E) :- time(T), domE(E), #max{E1 : at(T,_,_,E1)} = E.
-inangolo(T)   :- at(T,0,0,E), maxstato(T,E).
+
+% ---- ANCORAGGIO GRADUATO: distanza di Manhattan del massimo dall'angolo.
+% Il criterio binario "il massimo e' in (0,0)" valutato solo a fine piano non
+% costava nulla ai piani che scacciano il massimo dall'angolo a meta' strada
+% per poi rimettercelo, e messo a ogni passo al livello piu' alto schiacciava
+% tutto il resto (misurato: a H=3 la media crollava da ~5300 a ~3200).
+% Graduato, e dentro la somma posizionale invece che sopra di essa, non ha
+% nessuno dei due difetti.
+%
+% Il minimo perche' due caselle possono contenere lo stesso esponente massimo:
+% conta la piu' vicina all'angolo, non tutte.
+dom6(0..6).
+posMax(T,D)  :- maxstato(T,E), at(T,R,C,E), D=R+C.
+distMax(T,D) :- time(T), dom6(D), #min{D1 : posMax(T,D1)} = D.
 
 % monotonia: coppie adiacenti in cui il valore CRESCE allontanandosi
 % dall'angolo di ancoraggio (0,0), cioe' le rotture della "scala".
@@ -155,8 +167,34 @@ salita(T,R,C,R1,C) :- at(T,R,C,E), R1=R+1, at(T,R1,C,E1), E1>E.
 disordine(T,N) :- time(T), dom24(N),
                   #count{R,C,R2,C2 : salita(T,R,C,R2,C2)} = N.
 
-% numero di merge nel piano (proxy economico del punteggio)
-nmerge(N) :- domM(N), #count{T,D,L,K : mrg(T,D,L,K)} = N.
+% ---- LEVIGATEZZA: somma di |E-E1| sulle coppie adiacenti.
+% Due tessere adiacenti molto diverse non potranno mai fondersi e si bloccano
+% a vicenda lo spazio. La monotonia da sola non lo vede: un 2 accanto a un
+% 1024 e un 512 accanto a un 1024 sono entrambi "in discesa", e valgono
+% uguale.
+%
+% La somma NON passa da un aggregato con variabile di dominio: i weak
+% constraint sommano gia' sui termini discriminanti distinti, e un dominio
+% 0..384 replicato per ogni passo costerebbe grounding per nulla.
+salto(T,R,C,R,C1,X) :- at(T,R,C,E), C1=C+1, at(T,R,C1,E1), E>=E1, X=E-E1.
+salto(T,R,C,R,C1,X) :- at(T,R,C,E), C1=C+1, at(T,R,C1,E1), E1>E,  X=E1-E.
+salto(T,R,C,R1,C,X) :- at(T,R,C,E), R1=R+1, at(T,R1,C,E1), E>=E1, X=E-E1.
+salto(T,R,C,R1,C,X) :- at(T,R,C,E), R1=R+1, at(T,R1,C,E1), E1>E,  X=E1-E.
+
+% ---- MERGE PESATI PER VALORE (proxy economico del punteggio)
+% Contarli e basta equipara la fusione di due 2 a quella di due 512. Il premio
+% e' l'ESPONENTE fuso, cioe' il logaritmo del valore e non il valore: i pesi
+% grandi nei weak constraint fanno esplodere i tempi, e una scala logaritmica
+% ordina i merge esattamente allo stesso modo restando a due cifre.
+%
+% Il costo e' il complemento del premio perche' nessun peso puo' essere
+% negativo. Il tetto e' 255 e non e' scelto a occhio: nel modello non
+% compaiono tessere nuove, quindi ogni merge toglie una tessera e da 16 se ne
+% possono fare al piu' 15, ciascuna con esponente al piu' 17 (domE). Sopra il
+% tetto premioMerge non verrebbe derivato e il livello diventerebbe muto.
+domPremio(0..255).
+premioMerge(S) :- domPremio(S),
+                  #sum{E,T,D,L,K : mrg(T,D,L,K), comp(T,D,L,K,E)} = S.
 
 % ============================================================
 % OTTIMIZZAZIONE (livello piu' alto = piu' importante)
@@ -169,14 +207,33 @@ nmerge(N) :- domM(N), #count{T,D,L,K : mrg(T,D,L,K)} = N.
 % costo giusto e' il peggio sui rami, e lo aggiunge adversary.dlv2 ai livelli
 % sopra questi.
 %
-% L'angolo si valuta SOLO sullo stato finale, ed e' l'unico termine che non e'
-% stato messo a ogni passo. Misurato, non deciso a tavolino: sommando 1@4 per
-% ogni passo senza il massimo nell'angolo, il livello 4 arriva a valere fino a
-% H e schiaccia lessicograficamente tutto il resto. A H=2 si notava appena, a
-% H=3 il punteggio medio crollava da ~5300 a ~3200 su seme identico. Un
-% criterio binario a priorita' massima va tenuto binario.
+% ---- PERCHE' TRE LIVELLI E NON QUATTRO
+% I livelli lessicografici sono uno strumento brutale: il livello sotto conta
+% solo a parita' esatta di quello sopra. Con quattro livelli un guadagno di un
+% punto di riempimento batteva qualunque miglioramento di monotonia, e la
+% monotonia batteva qualunque numero di merge.
+%
+% Riempimento e merge restano su livelli propri, perche' dicono cose di
+% natura diversa: riempirsi e' fatale e il costo e' gia' convesso, i merge
+% sono il guadagno e devono decidere solo a parita' di posizione.
+%
+% I termini POSIZIONALI invece descrivono tutti la stessa cosa da angoli
+% diversi — quanto la board e' pettinata verso l'angolo — e ordinarli fra loro
+% e' arbitrario. Stanno in un solo livello con pesi relativi, come fanno gli
+% AI forti di 2048, che valutano una somma pesata e non una gerarchia.
+%
+% I pesi: la monotonia conta 4 per coppia invertita, la levigatezza 1 per
+% unita' di esponente (una coppia 2/1024 vale gia' 9), la distanza del massimo
+% dall'angolo 3 per casella. Ordini di grandezza confrontabili per passo, che
+% e' l'unica cosa che serve: nessuno dei tre deve poter azzerare gli altri.
+%
+% Il tag costante (mon/lev/anc) nei termini discriminanti serve a impedire che
+% due weak constraint dello stesso livello collassino sulla stessa tupla.
 % ============================================================
-:~ horizon(TH), not inangolo(TH).             [1@4]
 :~ passo(T), carico(T,M), costoCarico(M,W).   [W@3, T]
-:~ passo(T), disordine(T,N).                  [N@2, T]
-:~ nmerge(N), C=32-N.                         [C@1]
+
+:~ passo(T), disordine(T,N), W=N*4.           [W@2, mon,T]
+:~ passo(T), salto(T,R,C,R2,C2,X).            [X@2, lev,T,R,C,R2,C2]
+:~ passo(T), distMax(T,D), W=D*3.             [W@2, anc,T]
+
+:~ premioMerge(S), C=255-S.                   [C@1]

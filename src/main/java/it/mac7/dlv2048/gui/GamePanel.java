@@ -7,8 +7,7 @@ import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
-import java.awt.event.KeyEvent;
-import java.awt.event.KeyListener;
+import java.awt.event.ActionEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 
@@ -16,7 +15,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
+import javax.swing.AbstractAction;
 import javax.swing.JPanel;
+import javax.swing.KeyStroke;
 import javax.swing.SwingWorker;
 import javax.swing.Timer;
 
@@ -30,7 +31,7 @@ import it.mac7.dlv2048.solver.SolverOutcome;
 import it.mac7.dlv2048.solver.SolverStatus;
 
 @SuppressWarnings("serial")
-public class GamePanel extends JPanel implements KeyListener{
+public class GamePanel extends JPanel {
 
 	static final Color[] COLOR_TABLE = {
 	        new Color(0x701710), new Color(0xFFE4C3), new Color(0xfff4d3),
@@ -106,13 +107,51 @@ public class GamePanel extends JPanel implements KeyListener{
         addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
-                if (game.stato() != GameState.RUNNING) {
-                    game.inizia();
-                    ultimoEsitoSolver = null;
-                }
-                notificaCambioStato();
+                iniziaPartita();
             }
         });
+
+        registraTasti();
+    }
+
+    /**
+     * Key binding e non KeyListener: un KeyListener riceve gli eventi solo per
+     * il componente che ha il fuoco, e basta aggiungere un altro componente
+     * perche' i tasti smettano di rispondere senza che nulla segnali l'errore.
+     * WHEN_IN_FOCUSED_WINDOW li fa arrivare comunque.
+     */
+    private void registraTasti() {
+        lega("UP",    () -> tentaMossa(Direction.UP));
+        lega("DOWN",  () -> tentaMossa(Direction.DOWN));
+        lega("LEFT",  () -> tentaMossa(Direction.LEFT));
+        lega("RIGHT", () -> tentaMossa(Direction.RIGHT));
+        lega("S",     this::avviaSuggerimento);
+        lega("SPACE", this::iniziaPartita);
+    }
+
+    /** Scatta il tasto passando dai key binding veri: e' il percorso dell'applicazione. */
+    void premi(String tasto) {
+        Object nome = getInputMap(WHEN_IN_FOCUSED_WINDOW).get(KeyStroke.getKeyStroke(tasto));
+        if (nome == null) throw new IllegalStateException("tasto non legato: " + tasto);
+        getActionMap().get(nome).actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, tasto));
+    }
+
+    private void lega(String tasto, Runnable azione) {
+        getInputMap(WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(tasto), tasto);
+        getActionMap().put(tasto, new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                azione.run();
+            }
+        });
+    }
+
+    void iniziaPartita() {
+        if (game.stato() != GameState.RUNNING) {
+            game.inizia();
+            ultimoEsitoSolver = null;
+        }
+        notificaCambioStato();
     }
 
     /** Registra un osservatore invocato a ogni cambio di stato reale (non a ogni frame). */
@@ -274,16 +313,6 @@ public class GamePanel extends JPanel implements KeyListener{
         g.drawString(s, tx, ty);
     }
 
-	public void keyPressed(KeyEvent e) {
-		switch (e.getKeyCode()) {
-        case KeyEvent.VK_UP -> tentaMossa(Direction.UP);
-        case KeyEvent.VK_DOWN -> tentaMossa(Direction.DOWN);
-        case KeyEvent.VK_LEFT -> tentaMossa(Direction.LEFT);
-        case KeyEvent.VK_RIGHT -> tentaMossa(Direction.RIGHT);
-        case KeyEvent.VK_S -> avviaSuggerimento();
-		default -> { }
-		}
-	}
 
 	private void tentaMossa(Direction d) {
 		if (game.stato() != GameState.RUNNING) return;
@@ -362,8 +391,6 @@ public class GamePanel extends JPanel implements KeyListener{
 		return game;
 	}
 
-	public void keyReleased(KeyEvent arg0) {}
 
-	public void keyTyped(KeyEvent arg0) {}
 
 }

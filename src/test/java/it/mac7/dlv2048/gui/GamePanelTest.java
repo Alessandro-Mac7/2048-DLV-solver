@@ -85,7 +85,7 @@ class GamePanelTest {
     private static long premiSSullEdt(GamePanel panel)
             throws InterruptedException, InvocationTargetException {
         long t0 = System.nanoTime();
-        SwingUtilities.invokeAndWait(() -> panel.keyPressed(tastoS(panel)));
+        SwingUtilities.invokeAndWait(() -> panel.premi("S"));
         return (System.nanoTime() - t0) / 1_000_000;
     }
 
@@ -196,6 +196,35 @@ class GamePanelTest {
     }
 
     /**
+     * Regressione: il KeyListener era registrato sulla finestra mentre il fuoco
+     * stava sul pannello, quindi nell'applicazione vera i tasti non facevano
+     * nulla — e nessun test se ne accorgeva, perche' chiamavano il gestore
+     * direttamente scavalcando il collegamento. Qui si passa dai key binding.
+     */
+    @Test
+    void le_frecce_muovono_davvero_passando_dai_tasti_legati() throws Exception {
+        Game game = new Game(new SolverLentoSenzaMossa());
+        game.inizia();
+        GamePanel panel = new GamePanel(game);
+
+        Board prima = game.board();
+        Direction mossa = mossaLegaleQualsiasi(prima);
+        SwingUtilities.invokeAndWait(() -> panel.premi(mossa.name()));
+
+        assertNotEquals(prima, game.board(),
+                "il tasto " + mossa + " deve muovere: se non muove il collegamento e' rotto");
+    }
+
+    @Test
+    void ogni_tasto_del_gioco_e_effettivamente_legato() throws Exception {
+        GamePanel panel = new GamePanel(new Game(new SolverLentoSenzaMossa()));
+        for (String t : new String[]{"UP", "DOWN", "LEFT", "RIGHT", "S", "SPACE"}) {
+            SwingUtilities.invokeAndWait(() ->
+                    assertDoesNotThrow(() -> panel.premi(t), "tasto non legato: " + t));
+        }
+    }
+
+    /**
      * Variante della stessa guardia per un percorso diverso: non l'utente che
      * muove, ma una partita nuova avviata col mouse mentre DLV sta ancora
      * pensando. La mossa vecchia non deve atterrare sulla partita nuova.
@@ -259,7 +288,7 @@ class GamePanelTest {
         GamePanel panel = new GamePanel(game);
         Direction mossa = mossaLegaleQualsiasi(game.board());
 
-        SwingUtilities.invokeAndWait(() -> panel.keyPressed(tastoFreccia(panel, codiceTasto(mossa))));
+        SwingUtilities.invokeAndWait(() -> panel.premi(mossa.name()));
         assertTrue(panel.animazioneInCorso(), "una mossa che sposta tessere deve avviare l'animazione");
 
         long scadenza = System.currentTimeMillis() + 2000;

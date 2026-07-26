@@ -25,7 +25,6 @@ public class Launcher {
 		f.setLayout(new BorderLayout());
 		f.add(stato, BorderLayout.NORTH);
 		f.add(game, BorderLayout.CENTER);
-		f.addKeyListener(game);
 
 		f.setResizable(true);
 		f.setMinimumSize(new Dimension(420, 480));

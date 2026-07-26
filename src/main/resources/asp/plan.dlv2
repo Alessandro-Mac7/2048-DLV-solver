@@ -115,15 +115,22 @@ fantasmi(T,0) :- time(T), spawnEsplicito.   % la sovrapposizione le piazza davve
 carico(T,M)  :- piene(T,P), fantasmi(T,F), M=P+F, dom16(M).
 carico(T,16) :- piene(T,P), fantasmi(T,F), P+F > 16.
 
-% ---- penalita' di riempimento PROGRESSIVA: (M-4)^2 troncato a zero.
+% ---- penalita' di riempimento PROGRESSIVA: M^2.
 % Con un costo lineare un piano che passa per una posizione stretta costa
 % quanto uno che tiene la board arieggiata; con uno convesso il passaggio da
-% 13 a 14 occupate costa quanto quello da 4 a 9 messi insieme.
-costoCarico(0,0).   costoCarico(1,0).   costoCarico(2,0).   costoCarico(3,0).
-costoCarico(4,0).   costoCarico(5,1).   costoCarico(6,4).   costoCarico(7,9).
-costoCarico(8,16).  costoCarico(9,25).  costoCarico(10,36). costoCarico(11,49).
-costoCarico(12,64). costoCarico(13,81). costoCarico(14,100).
-costoCarico(15,121). costoCarico(16,144).
+% 13 a 14 occupate costa quanto quello da 0 a 7 messi insieme.
+%
+% Il quadrato parte da zero e non da una soglia. Una prima versione troncava a
+% zero sotto le 5 caselle occupate, e su board larga il livello 3 diventava
+% piatto: sparita la pressione a fondere, il solver si limitava a tenere le
+% righe in ordine e il punteggio medio dimezzava (2780 contro 5207 del
+% riferimento, 8 partite appaiate a H=2). Una penalita' di riempimento deve
+% crescere ovunque, non solo dove fa paura.
+costoCarico(0,0).    costoCarico(1,1).    costoCarico(2,4).   costoCarico(3,9).
+costoCarico(4,16).   costoCarico(5,25).   costoCarico(6,36).  costoCarico(7,49).
+costoCarico(8,64).   costoCarico(9,81).   costoCarico(10,100). costoCarico(11,121).
+costoCarico(12,144). costoCarico(13,169). costoCarico(14,196).
+costoCarico(15,225). costoCarico(16,256).
 
 % ---- vincolo rigido: mai scendere sotto K caselle libere lungo il piano.
 % Vale sul carico, non su piene, per il motivo detto sopra. Si attiva solo se

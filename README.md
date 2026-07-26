@@ -83,8 +83,8 @@ distinguono un modello migliore dal rumore.
 La board viene tradotta in fatti ASP (`at(0,R,C,E)`, esponenti: valore = 2^E) e
 concatenata al programma `src/main/resources/asp/plan.dlv2`, che modella la
 meccanica di 2048 come problema di pianificazione: indovina una sequenza di
-mosse, ne deriva gli stati e li ottimizza con weak constraint su angolo,
-riempimento, monotonia e numero di merge.
+mosse, ne deriva gli stati e li ottimizza con weak constraint su riempimento,
+posizione delle tessere e merge (vedi "Come il modello valuta una posizione").
 
 Il solver **non** usa un orizzonte fisso: usa l'**approfondimento iterativo**.
 Parte da orizzonte 1 e sale di uno alla volta, conservando sempre l'ultimo

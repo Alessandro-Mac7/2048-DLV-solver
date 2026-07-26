@@ -126,6 +126,7 @@ altraLegale(T) :- at(T,R,C,E), R1=R+1, at(T,R1,C,E).
 dom16(0..16).
 dom24(0..24).
 domE(1..17).
+domM(0..32).
 
 % I passi del piano: gli stati che stanno sulla catena. La sovrapposizione
 % avversariale aggiunge altri time(N) fuori dalla catena, e i costi sommati
@@ -219,20 +220,31 @@ salto(T,R,C,R,C1,X) :- at(T,R,C,E), C1=C+1, at(T,R,C1,E1), E1>E,  X=E1-E.
 salto(T,R,C,R1,C,X) :- at(T,R,C,E), R1=R+1, at(T,R1,C,E1), E>=E1, X=E-E1.
 salto(T,R,C,R1,C,X) :- at(T,R,C,E), R1=R+1, at(T,R1,C,E1), E1>E,  X=E1-E.
 
+% ---- MATRICE A SERPENTE: peso per casella lungo il percorso
+%   (0,0) (0,1) (0,2) (0,3)
+%   (1,3) (1,2) (1,1) (1,0)
+%   (2,0) (2,1) (2,2) (2,3)
+%   (3,3) (3,2) (3,1) (3,0)
+% che parte dall'angolo di ancoraggio e serpeggia. Le tessere in ordine
+% decrescente su quel percorso restano sempre fondibili con la successiva,
+% ed e' la ragione per cui il serpente e' l'euristica piu' forte conosciuta
+% per 2048.
+%
+% Il peso e' l'indice sul percorso diviso per tre (0..5) e non l'indice pieno
+% (0..15): moltiplicato per l'esponente, un peso 0..15 arriverebbe a 255 per
+% singola tessera e schiaccerebbe monotonia e levigatezza, che stanno nello
+% stesso livello. A scala ridotta il serpente orienta senza monopolizzare.
+serp(0,0,0). serp(0,1,1). serp(0,2,1). serp(0,3,1).
+serp(1,3,2). serp(1,2,2). serp(1,1,2). serp(1,0,3).
+serp(2,0,3). serp(2,1,3). serp(2,2,4). serp(2,3,4).
+serp(3,3,4). serp(3,2,5). serp(3,1,5). serp(3,0,5).
+
 % ---- MERGE PESATI PER VALORE (proxy economico del punteggio)
 % Contarli e basta equipara la fusione di due 2 a quella di due 512. Il premio
 % e' l'ESPONENTE fuso, cioe' il logaritmo del valore e non il valore: i pesi
 % grandi nei weak constraint fanno esplodere i tempi, e una scala logaritmica
 % ordina i merge esattamente allo stesso modo restando a due cifre.
-%
-% Il costo e' il complemento del premio perche' nessun peso puo' essere
-% negativo. Il tetto e' 255 e non e' scelto a occhio: nel modello non
-% compaiono tessere nuove, quindi ogni merge toglie una tessera e da 16 se ne
-% possono fare al piu' 15, ciascuna con esponente al piu' 17 (domE). Sopra il
-% tetto premioMerge non verrebbe derivato e il livello diventerebbe muto.
-domPremio(0..255).
-premioMerge(S) :- domPremio(S),
-                  #sum{E,T,D,L,K : mrg(T,D,L,K), comp(T,D,L,K,E)} = S.
+nmerge(N) :- domM(N), #count{T,D,L,K : mrg(T,D,L,K)} = N.
 
 % ============================================================
 % OTTIMIZZAZIONE (livello piu' alto = piu' importante)
@@ -274,4 +286,17 @@ premioMerge(S) :- domPremio(S),
 :~ passo(T), salto(T,R,C,R2,C2,X).            [X@2, lev,T,R,C,R2,C2]
 :~ passo(T), distMax(T,D), W=D*3.             [W@2, anc,T]
 
-:~ premioMerge(S), C=255-S.                   [C@1]
+% ---- il livello dei merge, in due pezzi che sommati fanno "massimizza la
+% somma degli esponenti fusi". La riscrittura non e' cosmetica: la stessa
+% quantita' scritta come #sum{E,T,D,L,K : mrg(...), comp(...,E)} costa 17,5 s
+% contro 5,4 s su una board a orizzonte 6, perche' l'aggregato costringe il
+% grounder a istanziare anche l'esponente. Qui i weak constraint sommano gia'
+% sulle tuple distinte e l'aggregato resta quello, piu' piccolo, sui soli merge.
+%
+% Il conto: 18*(32-N) + somma di (18-E) = 576 - somma di E. Il fattore 18 sul
+% termine di conteggio e' obbligatorio, non una taratura. Senza, ogni merge in
+% piu' aggiungerebbe (18-E) > 0 al costo e il modello preferirebbe non fondere
+% affatto: e' 18 che ricompra il merge prima di pesarlo. Verificato: i due
+% costi differiscono di una costante (321) e l'ottimo e' lo stesso.
+:~ nmerge(N), C1=32-N, C=C1*18.               [C@1, cnt]
+:~ mrg(T,D,L,K), comp(T,D,L,K,E), W=18-E.     [W@1, val,T,D,L,K]

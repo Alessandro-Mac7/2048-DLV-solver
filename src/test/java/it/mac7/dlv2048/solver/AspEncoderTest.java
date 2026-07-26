@@ -37,27 +37,20 @@ class AspEncoderTest {
     }
 
     @Test
-    void avversario_a_una_mossa_apre_un_ramo_per_casella() {
-        String f = AspEncoder.factsAvversario(Board.of(1,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0), 1);
-        assertTrue(f.contains("radice(0)."));
+    void avversario_aggiunge_una_foglia_per_casella_dopo_la_catena() {
+        String f = AspEncoder.factsAvversario(Board.of(1,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0), 2);
+        // la catena resta quella del piano lineare
+        assertTrue(f.contains("horizon(2)."));
+        assertTrue(f.contains("step(0..1)."));
         assertTrue(f.contains("at(0,0,0,1)."));
-        assertTrue(f.contains("succ(0,1)."));
-        assertTrue(f.contains("ramo(1,0,2)."));
-        assertTrue(f.contains("ramo(1,15,17)."));
-        // radice + esito + 16 figli
-        assertTrue(f.contains("time(0..17)."), "intervallo dei nodi errato:\n" + f);
+        // le foglie stanno dopo la catena: nessuna collisione con i suoi passi
+        assertTrue(f.contains("ramo(0,3)."));
+        assertTrue(f.contains("ramo(15,18)."));
+        assertTrue(f.contains("time(3..18)."), "intervallo delle foglie errato:\n" + f);
     }
 
     @Test
-    void avversario_a_due_mosse_espande_ogni_ramo() {
-        String f = AspEncoder.factsAvversario(Board.empty(), 2);
-        // ogni figlio del primo livello ha il proprio esito e i propri 16 rami
-        assertTrue(f.contains("succ(2,18)."));
-        assertTrue(f.contains("ramo(18,0,19)."));
-    }
-
-    @Test
-    void avversario_con_zero_mosse_e_rifiutato() {
+    void avversario_con_orizzonte_non_positivo_e_rifiutato() {
         assertThrows(IllegalArgumentException.class,
                 () -> AspEncoder.factsAvversario(Board.empty(), 0));
     }

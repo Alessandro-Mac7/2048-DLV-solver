@@ -19,17 +19,17 @@ class AspResourceTest {
     }
 
     /**
-     * La sovrapposizione avversariale e' additiva e va spenta per default: se
-     * dichiarasse spawnEsplicito da sola non basterebbe, deve essere il
-     * programma base a non contenerlo mai come fatto.
+     * La sovrapposizione avversariale e' additiva: concatenarla al programma
+     * base non deve cambiare nulla finche' il chiamante non fornisce i fatti
+     * ramo/2. Il programma base non deve contenerne alcuno.
      */
     @Test
-    void la_sovrapposizione_avversariale_e_separata_e_non_attiva_da_sola() throws Exception {
+    void la_sovrapposizione_avversariale_e_separata_e_inerte_senza_i_suoi_fatti() throws Exception {
         String base = leggi("/asp/plan.dlv2");
         String avv = leggi("/asp/adversary.dlv2");
-        assertFalse(base.contains("\nspawnEsplicito."), "il programma base non deve attivarsi da solo");
-        assertTrue(avv.contains("\nspawnEsplicito."), "la sovrapposizione non si attiva");
-        assertTrue(base.contains("not spawnEsplicito"), "il base non cede il campo alla sovrapposizione");
+        assertFalse(base.contains("ramo("), "il programma base non deve conoscere i rami");
+        assertTrue(avv.contains("ramo(K,N)"), "la sovrapposizione non legge i rami");
+        assertTrue(avv.contains(":~"), "la sovrapposizione non aggiunge alcun obiettivo");
     }
 
     private String leggi(String risorsa) throws Exception {

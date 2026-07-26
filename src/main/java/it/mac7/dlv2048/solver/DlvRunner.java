@@ -35,11 +35,24 @@ public final class DlvRunner {
             //
             // --printonlyoptimum e' obbligatorio: senza, DLV2 enumera TUTTI gli
             // answer set ottimi simmetrici e i tempi crollano. -n=1 non basta.
+            //
+            // NIENTE --filter. Non e' una svista ed e' costato caro scoprirlo:
+            // su questo programma "--filter=move/2" cambia l'OTTIMO, non solo
+            // cio' che viene stampato. DLV2 usa il filtro per potare le regole
+            // ritenute irrilevanti, e cosi' facendo puo' togliere il supporto a
+            // un predicato derivato che compare nel corpo di un vincolo. Nel
+            // modello avversariale step/1 e' derivato: potato quello, il vincolo
+            // "a ogni passo serve una mossa" diventa vacuo e il solver risponde
+            // con l'answer set vuoto, cioe' "nessuna mossa", su board che ne
+            // avevano quattro legali (misurato: 32 volte su 321 mosse).
+            //
+            // Il filtro non serviva nemmeno: il costo misurato del suo taglio e'
+            // nullo (844 ms contro 860 ms a orizzonte 3) e l'output passa da 65
+            // byte a 9 KB, che AnswerSetParser attraversa senza accorgersene.
             proc = new ProcessBuilder(
                     binary.toString(),
                     "--silent",
                     "--printonlyoptimum",
-                    "--filter=move/2",
                     tmpIn.toString())
                     .redirectErrorStream(true)
                     .redirectOutput(tmpOut.toFile())

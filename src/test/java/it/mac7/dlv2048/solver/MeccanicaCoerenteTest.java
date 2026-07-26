@@ -104,7 +104,10 @@ class MeccanicaCoerenteTest {
             istanza.append(":- not move(").append(t).append(',')
                    .append(sequenza[t].aspCode()).append(").\n");
         }
-        Pattern AT = Pattern.compile("at\\(" + passi + ",(\\d),(\\d),(\\d+)\\)");
+        // il confine di parola tiene fuori lat/5 e gli altri predicati che
+        // finiscono in "at": senza --filter l'answer set li contiene tutti
+        Pattern AT = Pattern.compile(
+                "(?<![A-Za-z0-9_])at\\(" + passi + ",(\\d),(\\d),(\\d+)\\)");
 
         Path tmpIn = Files.createTempFile("coerenza-", ".asp");
         Path tmpOut = Files.createTempFile("coerenza-out-", ".txt");
@@ -112,8 +115,10 @@ class MeccanicaCoerenteTest {
         try {
             Files.writeString(tmpIn, programma + "\n" + istanza);
 
+            // niente --filter: su questo programma il filtro pota regole e puo'
+            // cambiare l'ottimo, non solo l'output (vedi DlvRunner)
             p = new ProcessBuilder(bin.toString(), "--silent",
-                    "--printonlyoptimum", "--filter=at/4", tmpIn.toString())
+                    "--printonlyoptimum", tmpIn.toString())
                     .redirectErrorStream(true)
                     .redirectOutput(tmpOut.toFile())
                     .start();

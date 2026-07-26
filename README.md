@@ -106,11 +106,42 @@ quello atteso, errore di I/O) il solver restituisce un errore distinto,
 separato dal caso "nessuna soluzione": i due casi non vanno confusi, uno e'
 fine partita e l'altro e' un guasto del solver.
 
-### Limite noto
+### Come il modello vede il rischio
 
-Il modello ASP non genera le tessere casuali: nella sua simulazione la board
-non si riempie mai da sola. Su una board quasi piena questo significa che il
-solver non percepisce il pericolo di game over — approfondire l'orizzonte non
-aiuta, perche' il modello non vede il rischio a nessuna profondita'. E' il
-prossimo problema da affrontare (valutazione del rischio e delle caselle
-libere).
+Il programma non genera le tessere casuali, quindi nella sua simulazione
+l'occupazione della board e' **monotona non crescente**: le mosse possono solo
+far calare il numero di tessere. Su una board quasi piena il piano risultava
+identico da orizzonte 1 a orizzonte 10, perche' il modello non vedeva alcun
+pericolo a nessuna profondita'.
+
+La cura non e' guardare piu' stati ma **contare le tessere che il gioco
+aggiungera'**: il carico al passo T e' `piene(T) + T`, cioe' le occupate piu'
+una tessera per mossa gia' giocata. Su quel numero il programma applica una
+penalita' quadratica sommata su tutti i passi e un vincolo rigido "mai sotto K
+caselle libere" (`minLibere`, oggi 2), che si attiva solo se la board di
+partenza ha gia' quel margine — imporlo su una board stretta renderebbe il
+programma incoerente proprio quando serve una mossa.
+
+Il vincolo dice una cosa che nessun altro termine diceva: siccome
+`piene(T) = piene(0) - merge fatti finora`, richiedere un carico basso equivale
+a richiedere **almeno tanti merge quanti lo spawn riempie**.
+
+### Modello avversariale (opzionale)
+
+`src/main/resources/asp/adversary.dlv2` si concatena al programma base e
+trasforma la tessera casuale in un avversario che sceglie la casella peggiore.
+Non e' attivo di default: si abilita con `new AspSolver(h, budget, true)` o con
+`--avversario` nel banco di prova.
+
+Il tempo smette di essere una catena e diventa un albero di gioco: ogni mossa
+apre fino a 16 rami, uno per casella libera, e il giocatore ha una mossa **per
+ramo**, cosi' la sua reazione dipende dalla tessera come nel gioco vero. Il
+costo di un piano e' il peggio sui rami, non la media.
+
+L'avversario e' **enumerato, non indovinato**, e il motivo non e' ovvio: un
+guess `spawn | nospawn` verrebbe minimizzato insieme al resto dai weak
+constraint, cioe' darebbe un avversario complice. Un "per ogni spawn" in ASP si
+ottiene solo per saturazione, che pretende un controllo monotono nelle atomiche
+indovinate — e la meccanica di 2048 non lo e', perche' una tessera in piu'
+riempie una casella ma puo' anche creare una coppia fondibile. Con 16
+alternative conviene aprirle tutte.

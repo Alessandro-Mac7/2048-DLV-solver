@@ -67,9 +67,10 @@ srank(T,D,L,K,N)  :- soc(T,D,L,K), scnt(T,D,L,K,N).
 % ciclo negativo lascerebbe ogni spawn privo di supporto: nessuna tessera
 % verrebbe mai piazzata.
 %
-% succ al posto di T1=T+1, perche' con l'avversario il tempo non e' piu' una
-% catena ma un albero: la sovrapposizione fornisce i propri archi.
-succ(T,T1) :- step(T), T1=T+1, time(T1), not spawnEsplicito.
+% succ al posto di T1=T+1 per tenere separato "il passo dopo" dal nome del
+% nodo: il tempo non e' piu' solo la catena, perche' la sovrapposizione
+% avversariale aggiunge stati che non stanno su di essa.
+succ(T,T1) :- step(T), T1=T+1, time(T1).
 esito(T1,R,C,E) :- surv(T,D,L,K,E), srank(T,D,L,K,J), lin(D,R,C,L,J),
                    move(T,D), succ(T,T1).
 at(T,R,C,E) :- esito(T,R,C,E).
@@ -89,14 +90,13 @@ dom24(0..24).
 domE(1..17).
 domM(0..32).
 
-% Valutare uno stato costa tre aggregati, e un aggregato che dipende dal guess
-% resta indeciso fino alla risoluzione: vanno chiesti solo per gli stati che
-% qualcuno legge davvero. Nella catena lineare sono tutti; con l'avversario
-% l'albero ha centinaia di nodi e servono solo le foglie.
-valutabile(T) :- time(T), not spawnEsplicito.
+% I passi del piano: gli stati che stanno sulla catena. La sovrapposizione
+% avversariale aggiunge altri time(N) fuori dalla catena, e i costi sommati
+% lungo il piano non devono contarli.
+passo(T) :- time(T), horizon(TH), T>0, T<=TH.
 
 occ(T,R,C) :- at(T,R,C,_).
-piene(T,M) :- valutabile(T), dom16(M), #count{R,C : occ(T,R,C)} = M.
+piene(T,M) :- time(T), dom16(M), #count{R,C : occ(T,R,C)} = M.
 
 % ---- CARICO: occupazione reale piu' le tessere che il gioco aggiungera'
 % Questo termine e' il cuore della milestone. Senza spawn l'occupazione lungo
@@ -110,8 +110,7 @@ piene(T,M) :- valutabile(T), dom16(M), #count{R,C : occ(T,R,C)} = M.
 % Poiche' piene(T) = piene(0) - merge fatti finora, il carico dice anche una
 % cosa che nessun altro termine diceva: per non affogare bisogna fondere
 % almeno tanto quanto lo spawn riempie.
-fantasmi(T,T) :- time(T), not spawnEsplicito.
-fantasmi(T,0) :- time(T), spawnEsplicito.   % la sovrapposizione le piazza davvero
+fantasmi(T,T) :- passo(T).
 carico(T,M)  :- piene(T,P), fantasmi(T,F), M=P+F, dom16(M).
 carico(T,16) :- piene(T,P), fantasmi(T,F), P+F > 16.
 
@@ -139,14 +138,13 @@ costoCarico(15,225). costoCarico(16,256).
 % solver rifiuterebbe di muovere invece di giocare la meno peggio.
 minLibere(2).
 margineIniziale :- minLibere(K), piene(0,P), 16-P > K.
-:- margineIniziale, minLibere(K), time(T), T>0, carico(T,M), M > 16-K,
-   not spawnEsplicito.
+:- margineIniziale, minLibere(K), passo(T), carico(T,M), M > 16-K.
 
-maxstato(T,E) :- valutabile(T), domE(E), #max{E1 : at(T,_,_,E1)} = E.
+maxstato(T,E) :- time(T), domE(E), #max{E1 : at(T,_,_,E1)} = E.
 inangolo(T)   :- at(T,0,0,E), maxstato(T,E).
 
 % monotonia di riga: coppie adiacenti crescenti (euristica "scala")
-disordine(T,N) :- valutabile(T), dom24(N),
+disordine(T,N) :- time(T), dom24(N),
                   #count{R,C : at(T,R,C,E), C1=C+1, at(T,R,C1,E1), E1>E} = N.
 
 % numero di merge nel piano (proxy economico del punteggio)
@@ -158,10 +156,10 @@ nmerge(N) :- domM(N), #count{T,D,L,K : mrg(T,D,L,K)} = N.
 % aggiungerebbe solo una costante. Il termine discriminante T serve a far
 % SOMMARE i passi invece di collassarli in uno.
 %
-% Tutta questa sezione somma i costi lungo una catena di stati. Con
-% l'avversario il tempo e' un albero e il costo giusto e' il MASSIMO sui rami,
-% non la somma: da qui il not spawnEsplicito, che spegne questi obiettivi e
-% lascia il campo a quelli di adversary.dlv2.
+% Questi costi si sommano lungo la CATENA (passo/1). Gli stati che la
+% sovrapposizione avversariale appende in fondo non ne fanno parte: li' il
+% costo giusto e' il peggio sui rami, e lo aggiunge adversary.dlv2 ai livelli
+% sopra questi.
 %
 % L'angolo si valuta SOLO sullo stato finale, ed e' l'unico termine che non e'
 % stato messo a ogni passo. Misurato, non deciso a tavolino: sommando 1@4 per
@@ -170,8 +168,7 @@ nmerge(N) :- domM(N), #count{T,D,L,K : mrg(T,D,L,K)} = N.
 % H=3 il punteggio medio crollava da ~5300 a ~3200 su seme identico. Un
 % criterio binario a priorita' massima va tenuto binario.
 % ============================================================
-:~ horizon(TH), not inangolo(TH), not spawnEsplicito.  [1@4]
-:~ time(T), T>0, carico(T,M), costoCarico(M,W),
-   not spawnEsplicito.                                 [W@3, T]
-:~ time(T), T>0, disordine(T,N), not spawnEsplicito.   [N@2, T]
-:~ nmerge(N), C=32-N, not spawnEsplicito.              [C@1]
+:~ horizon(TH), not inangolo(TH).             [1@4]
+:~ passo(T), carico(T,M), costoCarico(M,W).   [W@3, T]
+:~ passo(T), disordine(T,N).                  [N@2, T]
+:~ nmerge(N), C=32-N.                         [C@1]

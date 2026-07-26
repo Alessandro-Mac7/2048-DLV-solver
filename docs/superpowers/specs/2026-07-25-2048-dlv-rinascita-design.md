@@ -143,10 +143,34 @@ Valutazione a **ogni** passo invece che solo sullo stato finale; penalità di
 riempimento progressiva; vincolo rigido "mai scendere sotto K caselle libere".
 È la milestone che rimuove la cecità dimostrata dallo spike.
 
+> **Corretto in corso d'opera.** La formulazione qui sopra è incompleta e da sola
+> non produce nulla: senza spawn l'occupazione lungo il piano è **monotona non
+> crescente**, quindi guardare ogni passo non aggiunge informazione e un vincolo
+> su `piene(T)` è o sempre soddisfatto o già violato a T=0. Ciò che rende
+> entrambi sensati è contare le tessere che il gioco *aggiungerà*: il carico a
+> T è `piene(T) + T`. Su quello il vincolo rigido dice una cosa nuova — per non
+> affogare bisogna fondere almeno quanto lo spawn riempie — e la penalità
+> progressiva discrimina, cosa che sullo stato finale da solo **non** farebbe:
+> a orizzonte fisso il costo convesso del riempimento finale è una funzione
+> monotona di `piene(TH)`, quindi ordina i piani esattamente come il costo
+> lineare che sostituisce. La convessità conta solo perché i passi si sommano.
+
 ### M3 — Spawn avversariale
 La tessera casuale modellata come avversario che sceglie la casella peggiore.
 ASP disgiuntivo vero, orizzonte corto, attivabile separatamente. È ciò in cui
 DLV è unico rispetto ad altri solver.
+
+> **Corretto in corso d'opera.** "ASP disgiuntivo vero, Σ²p" era sbagliato. Un
+> guess `spawn | nospawn` non dà un avversario: i weak constraint minimizzano su
+> tutto l'answer set, mosse e spawn insieme, quindi il solver sceglie il
+> piazzamento più comodo e il modello diventa **ottimista** — peggio che non
+> avere modello. Il "per ogni spawn" richiede saturazione, che pretende un
+> controllo monotono nelle atomiche indovinate; la meccanica di 2048 non lo è in
+> nessuna direzione, perché una tessera in più riempie una casella ma può anche
+> creare una coppia fondibile. Le mosse dell'avversario sono però al massimo 16:
+> si aprono tutte come rami di un albero di gioco, si lascia al giocatore una
+> mossa per ramo e si prende il massimo sui rami. È min-max alternato, e resta in
+> NP.
 
 ### M4 — Grafica
 FlatLaf; layout calcolato al posto delle coordinate fisse `215 + c*121`;

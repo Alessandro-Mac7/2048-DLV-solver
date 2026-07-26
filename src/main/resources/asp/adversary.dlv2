@@ -1,122 +1,78 @@
 % ============================================================
 % SPAWN AVVERSARIALE (M3) — sovrapposizione a plan.dlv2
 %
-% Si concatena al programma base solo quando la modalita' e' attiva: spenta
-% non costa nulla, perche' senza spawnEsplicito nessuna di queste regole ha
-% un corpo derivabile.
+% Si concatena al programma base solo quando la modalita' e' attiva. Spenta non
+% costa nulla: senza i fatti ramo/2 nessuna di queste regole ha corpo.
 %
-% Il tempo smette di essere una catena e diventa un ALBERO DI GIOCO:
+% Il piano resta la catena di H mosse del programma base. In fondo, dopo
+% l'ultima mossa, l'avversario piazza una tessera nella casella peggiore: si
+% aprono tutti i piazzamenti possibili come stati foglia e si valuta il PEGGIO
+% fra loro, non la media. In ingresso, dal chiamante: ramo(K,N) per ogni indice
+% di casella K, con N identificativo dello stato foglia, e i time(N) relativi.
 %
-%   stato --mossa--> esito --tessera dell'avversario--> stato --mossa--> ...
-%   (nodo 0)        (nodo 1)      fino a 16 rami       (foglie, se non
-%                                                       hanno un succ)
-%
-% In ingresso, dal chiamante: radice(0). succ(N,E). ramo(E,K,C). time(N).
-% Le foglie sono gli stati DOPO il piazzamento dell'avversario, non prima:
-% cosi' anche una sola mossa (un solo succ) da' gia' un modello avversariale
-% completo, ed e' il caso che costa meno.
-%
-% PERCHE' L'AVVERSARIO E' ENUMERATO E NON INDOVINATO.
-% Il tentativo ovvio — spawn(T,R,C) | nospawn(T,R,C) — non funziona, e il
-% motivo merita di essere scritto perche' non e' evidente. I weak constraint
+% ---- perche' l'avversario e' ENUMERATO e non indovinato
+% Il tentativo ovvio — spawn(R,C) | nospawn(R,C) — non funziona, e il motivo
+% merita di essere scritto perche' non e' evidente. I weak constraint
 % MINIMIZZANO su tutto l'answer set, mosse e spawn insieme: il solver
-% sceglierebbe il piazzamento piu' comodo, cioe' un avversario COMPLICE. Per
-% avere il peggiore servirebbe un "per ogni spawn", e in ASP un quantificatore
-% universale si ottiene solo per saturazione — tecnica che pretende un
-% controllo MONOTONO nelle atomiche indovinate. La meccanica di 2048 non lo e'
-% in nessuna direzione: una tessera in piu' riempie una casella (peggio) ma
-% puo' anche creare una coppia fondibile (meglio).
+% sceglierebbe il piazzamento piu' comodo, cioe' un avversario COMPLICE, e il
+% modello sarebbe ottimista — peggio che non averne. Per avere il peggiore
+% serve un "per ogni spawn", e in ASP un quantificatore universale si ottiene
+% solo per saturazione, tecnica che pretende un controllo MONOTONO nelle
+% atomiche indovinate. La meccanica di 2048 non lo e' in nessuna direzione: una
+% tessera in piu' riempie una casella (peggio) ma puo' anche creare una coppia
+% fondibile (meglio). Le caselle pero' sono al massimo 16: aprirle tutte e
+% prendere il massimo costa meno di qualunque saturazione, ed e' esatto.
 %
-% Le mosse dell'avversario pero' sono al massimo 16. Invece di indovinarle si
-% aprono tutte come rami, si lascia al giocatore una mossa PER RAMO — cosi' la
-% sua reazione dipende dalla tessera, come nel gioco vero — e si prende il
-% #max sui rami. Il risultato e' esattamente max_spawn min_mossa, cioe'
-% min-max alternato esatto, senza saturazione.
+% ---- perche' la reazione del giocatore non e' modellata ramo per ramo
+% Una versione precedente costruiva un albero alternato completo, con una mossa
+% indovinata per ogni ramo. Due misure l'hanno bocciata. Costo: 30 s per una
+% mossa a due livelli di avversario, contro il budget di 3 s. Correttezza: in
+% quell'albero step/1 diventava un predicato DERIVATO dentro una componente con
+% negazione ricorsiva (step dipende da haMossa, che dipende da at, che dipende
+% dalla mossa del padre), e il vincolo ":- step(T), not qualche(T)" smetteva di
+% mordere — DLV2 restituiva l'answer set vuoto, cioe' "nessuna mossa", su board
+% con quattro mosse legali (32 volte su 321, misurato). Qui step/1 resta un
+% fatto del chiamante e il problema non esiste.
 % ============================================================
-
-spawnEsplicito.
 
 cella(K,R,C) :- idx(R), idx(C), K=R*4+C.
 
-% ---- rami: l'avversario piazza dove c'e' posto DOPO la mossa
-esitoNodo(E)    :- esito(E,_,_,_).
-occEsito(E,R,C) :- esito(E,R,C,_).
-ramoValido(E,K,N) :- ramo(E,K,N), esitoNodo(E), cella(K,R,C), not occEsito(E,R,C).
-
-% ---- lo stato figlio: l'esito piu' la tessera dell'avversario.
+% ---- le foglie: lo stato finale del piano piu' una tessera dell'avversario.
 % La tessera e' sempre un 2. Il gioco vero mette un 4 una volta su dieci e un
 % avversario davvero peggiore sceglierebbe anche il valore, ma raddoppiare i
 % rami per il caso da 10% non paga: il danno di una tessera sta quasi tutto
 % nella casella che occupa.
-at(N,R,C,X) :- ramoValido(E,K,N), esito(E,R,C,X).
-at(N,R,C,1) :- ramoValido(E,K,N), cella(K,R,C).
+ramoValido(K,N) :- ramo(K,N), horizon(TH), cella(K,R,C), not occ(TH,R,C).
+foglia(N)       :- ramoValido(_,N).
 
-% ---- nodi in cui tocca al giocatore
-stato(N) :- radice(N).
-stato(N) :- ramoValido(_,_,N).
-haSucc(N) :- succ(N,_).
+at(N,R,C,X) :- ramoValido(K,N), horizon(TH), at(TH,R,C,X).
+at(N,R,C,1) :- ramoValido(K,N), cella(K,R,C).
 
 % Esiste una mossa legale se c'e' una casella vuota o due tessere uguali
 % adiacenti. E' un controllo positivo e locale: non serve far girare la
 % meccanica nelle quattro direzioni per sapere se la posizione e' viva.
-haMossa(N) :- at(N,R,C,E), C1=C+1, at(N,R,C1,E).
-haMossa(N) :- at(N,R,C,E), R1=R+1, at(N,R1,C,E).
-haMossa(N) :- stato(N), idx(R), idx(C), not occ(N,R,C).
-
-% step e' derivato, non un fatto, per due motivi: un ramo che l'avversario non
-% puo' giocare (cella gia' occupata) non deve pretendere una mossa, e nemmeno
-% una posizione morta deve pretenderla — il vincolo ":- step(T), not
-% qualche(T)" del programma base renderebbe tutto incoerente, e il solver
-% direbbe "nessuna mossa" invece di scegliere la meno peggio.
-step(N)   :- stato(N), haSucc(N), haMossa(N).
-morto(N)  :- stato(N), not haMossa(N).
-foglia(N) :- stato(N), not haSucc(N).
-
-% solo questi stati vengono letti: gli aggregati del programma base costano, e
-% chiederli sui nodi interni dell'albero sarebbe lavoro buttato
-valutabile(N) :- radice(N).
-valutabile(N) :- foglia(N).
+haMossa(N) :- foglia(N), at(N,R,C,E), C1=C+1, at(N,R,C1,E).
+haMossa(N) :- foglia(N), at(N,R,C,E), R1=R+1, at(N,R1,C,E).
+haMossa(N) :- foglia(N), idx(R), idx(C), not occ(N,R,C).
+morto(N)   :- foglia(N), not haMossa(N).
 
 % ============================================================
-% IL PEGGIO, CRITERIO PER CRITERIO
-%
-% La prima versione fondeva i criteri in un solo numero per foglia e ne
-% prendeva il #max. Corretto ma inservibile: lo scalare moltiplica i valori
-% candidati (17 riempimenti x 2 angoli x 25 disordini per ogni foglia, circa
-% 7000 atomi) e il solver deve deciderli tutti — 4-6 secondi per una mossa in
-% cui il giocatore ha quattro alternative. Prendendo il massimo separatamente
-% per criterio gli aggregati diventano tre e piccoli, e l'ordine torna
-% lessicografico come nel programma base.
-%
-% Il peggio di ogni criterio puo' venire da rami diversi, quindi la
-% valutazione e' piu' pessimista del min-max esatto: e' un avversario un po'
-% piu' cattivo del vero, mai uno piu' buono.
+% IL PEGGIO SUI RAMI
+% Due soli termini, sopra tutti quelli del programma base: sono le uniche due
+% cose che cambiano da ramo a ramo. Il riempimento no — ogni foglia ha una
+% tessera in piu' dello stato finale, sempre la stessa quantita' — e nemmeno
+% l'angolo, perche' un 2 non sposta il massimo. Metterli sarebbe copiare
+% criteri che la catena gia' pesa.
 % ============================================================
 domRami(0..16).
 
-% quante caselle chiudono la partita: e' il segnale che il modello lineare non
-% ha a nessuna profondita'
+% Quante caselle chiudono la partita: e' il segnale che il modello lineare non
+% ha a nessuna profondita'. Contarle, invece di guardare solo se ne esiste una,
+% distingue "una casella letale su otto" da "tutte letali".
 quantiMorti(N) :- domRami(N), #count{M : morto(M)} = N.
 
-% la mossa toglie il massimo dall'angolo (il piazzamento di un 2 non lo sposta,
-% quindi questo criterio non dipende dal ramo)
-fuoriAngolo :- foglia(N), not inangolo(N).
-
-% La foglia e' gia' lo stato dopo il piazzamento: nessuna tessera fantasma da
-% aggiungere, il conteggio e' quello vero.
-peggiorCarico(M)    :- dom16(M), #max{P : foglia(N), piene(N,P)} = M.
+% Il disordine peggiore che l'avversario puo' produrre piazzando la tessera.
 peggiorDisordine(D) :- dom24(D), #max{Dz : foglia(N), disordine(N,Dz)} = D.
 
-% Merge della sola mossa alla radice: quelli nei rami non sono confrontabili
-% fra loro, e sommarli premierebbe i rami invece della mossa da scegliere.
-% Il dominio si ferma a 8 (due merge per linea, quattro linee) e non a domM:
-% con domM il peso 8-N diventerebbe NEGATIVO per N>8, e un peso negativo in un
-% weak constraint fa riportare a DLV2 un costo che non e' quello scritto.
-dom8(0..8).
-mergeRadice(N) :- dom8(N), radice(R), #count{D,L,K : mrg(R,D,L,K)} = N.
-
-:~ quantiMorti(N).                       [N@5]
-:~ fuoriAngolo.                          [1@4]
-:~ peggiorCarico(M), costoCarico(M,W).   [W@3]
-:~ peggiorDisordine(D).                  [D@2]
-:~ mergeRadice(N), C=8-N.                [C@1]
+:~ quantiMorti(N).      [N@6]
+:~ peggiorDisordine(D). [D@5]

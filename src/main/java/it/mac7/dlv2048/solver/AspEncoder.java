@@ -1,8 +1,6 @@
 package it.mac7.dlv2048.solver;
 
 import it.mac7.dlv2048.core.Board;
-import java.util.ArrayList;
-import java.util.List;
 
 /** Traduce una board nei fatti di istanza attesi da /asp/plan.dlv2. */
 public final class AspEncoder {
@@ -10,43 +8,23 @@ public final class AspEncoder {
     private AspEncoder() {}
 
     /**
-     * Fatti per la modalita' avversariale: lo stato iniziale piu' lo scheletro
-     * dell'albero di gioco atteso da /asp/adversary.dlv2. A ogni mossa segue un
-     * piazzamento dell'avversario, quindi le foglie sono gli stati DOPO la
-     * tessera. Con {@code mosse} mosse i nodi sono O(16^mosse): e' il motivo per
-     * cui questa modalita' vive su orizzonti corti.
+     * Fatti per la modalita' avversariale: gli stessi del piano lineare, piu' i
+     * sedici stati foglia che /asp/adversary.dlv2 usa per il piazzamento della
+     * tessera dopo l'ultima mossa. Gli identificativi delle foglie stanno dopo
+     * la catena, quindi non possono collidere con i suoi passi.
      *
-     * <p>I rami sono sempre 16, uno per casella. Quelli su casella occupata non
-     * producono alcuno stato e il grounder li fa sparire: e' piu' semplice
-     * generarli tutti che sapere qui quali sono liberi dopo la mossa, cosa che
-     * dipende dalla mossa e quindi non e' nota al chiamante.
+     * <p>I rami sono sempre sedici, uno per casella. Quelli su casella occupata
+     * non producono alcuno stato e spariscono in fase di grounding: quali
+     * caselle siano libere dipende dal piano scelto e qui non e' noto.
      */
-    public static String factsAvversario(Board board, int mosse) {
-        if (mosse < 1) {
-            throw new IllegalArgumentException("mosse deve essere >= 1, ricevuto " + mosse);
+    public static String factsAvversario(Board board, int horizon) {
+        StringBuilder sb = new StringBuilder(1024).append(facts(board, horizon));
+        int celle = Board.SIZE * Board.SIZE;
+        for (int k = 0; k < celle; k++) {
+            sb.append("ramo(").append(k).append(',').append(horizon + 1 + k).append(").\n");
         }
-        StringBuilder sb = new StringBuilder(4096);
-        sb.append("radice(0).\n");
-        appendStato(sb, board, 0);
-
-        int prossimo = 1;
-        List<Integer> stati = new ArrayList<>(List.of(0));
-        for (int d = 0; d < mosse; d++) {
-            List<Integer> figli = new ArrayList<>();
-            for (int n : stati) {
-                int esito = prossimo++;
-                sb.append("succ(").append(n).append(',').append(esito).append(").\n");
-                for (int k = 0; k < Board.SIZE * Board.SIZE; k++) {
-                    int figlio = prossimo++;
-                    sb.append("ramo(").append(esito).append(',').append(k)
-                      .append(',').append(figlio).append(").\n");
-                    figli.add(figlio);
-                }
-            }
-            stati = figli;
-        }
-        // gli identificativi sono assegnati in sequenza: un solo intervallo li copre
-        sb.append("time(0..").append(prossimo - 1).append(").\n");
+        sb.append("time(").append(horizon + 1).append("..")
+          .append(horizon + celle).append(").\n");
         return sb.toString();
     }
 

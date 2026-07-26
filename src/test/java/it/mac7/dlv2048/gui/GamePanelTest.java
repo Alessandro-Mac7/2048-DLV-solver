@@ -67,6 +67,20 @@ class GamePanelTest {
                 KeyEvent.VK_S, 'S');
     }
 
+    private static KeyEvent tastoFreccia(GamePanel panel, int codiceTasto) {
+        return new KeyEvent(panel, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0,
+                codiceTasto, KeyEvent.CHAR_UNDEFINED);
+    }
+
+    private static int codiceTasto(Direction d) {
+        return switch (d) {
+            case UP -> KeyEvent.VK_UP;
+            case DOWN -> KeyEvent.VK_DOWN;
+            case LEFT -> KeyEvent.VK_LEFT;
+            case RIGHT -> KeyEvent.VK_RIGHT;
+        };
+    }
+
     /** Preme S sull'Event Dispatch Thread e restituisce quanto l'EDT e' rimasto occupato. */
     private static long premiSSullEdt(GamePanel panel)
             throws InterruptedException, InvocationTargetException {
@@ -220,6 +234,62 @@ class GamePanelTest {
                     "tessera " + valore + ": indice " + i + " fuori da una tabella di "
                             + GamePanel.COLOR_TABLE.length + " colori");
         }
+    }
+
+    /**
+     * Regressione: il pannello girava un thread perenne in busy-loop
+     * (while(goal){...} senza attesa), che a partita ferma consumava una CPU
+     * intera. Sostituito da un timer di animazione che si avvia solo su una
+     * mossa reale e si ferma da solo: se tornasse a girare all'infinito
+     * questo test non finirebbe mai entro la scadenza.
+     */
+    @Test
+    void subito_dopo_la_creazione_non_c_e_animazione_in_corso() {
+        Game game = new Game(new SolverLento());
+        game.inizia();
+        GamePanel panel = new GamePanel(game);
+
+        assertFalse(panel.animazioneInCorso(), "a partita appena iniziata non deve girare nulla");
+    }
+
+    @Test
+    void una_mossa_valida_avvia_l_animazione_e_si_ferma_da_sola() throws Exception {
+        Game game = new Game(new SolverLento());
+        game.inizia();
+        GamePanel panel = new GamePanel(game);
+        Direction mossa = mossaLegaleQualsiasi(game.board());
+
+        SwingUtilities.invokeAndWait(() -> panel.keyPressed(tastoFreccia(panel, codiceTasto(mossa))));
+        assertTrue(panel.animazioneInCorso(), "una mossa che sposta tessere deve avviare l'animazione");
+
+        long scadenza = System.currentTimeMillis() + 2000;
+        while (panel.animazioneInCorso() && System.currentTimeMillis() < scadenza) {
+            Thread.sleep(10);
+        }
+        assertFalse(panel.animazioneInCorso(), "l'animazione deve fermarsi da sola, non girare all'infinito");
+    }
+
+    /**
+     * Regressione: le coordinate della griglia erano fisse (215 + c*121 ecc.)
+     * su un pannello 900x700 e non seguivano il ridimensionamento.
+     */
+    @Test
+    void il_layout_della_griglia_segue_le_dimensioni_del_pannello() {
+        Game game = new Game(new SolverLento());
+        game.inizia();
+        GamePanel panel = new GamePanel(game);
+
+        panel.setSize(900, 700);
+        GamePanel.Layout piccolo = panel.geometria();
+
+        panel.setSize(1800, 1400);
+        GamePanel.Layout grande = panel.geometria();
+
+        assertTrue(grande.gridSize() > piccolo.gridSize() * 1.5,
+                "raddoppiando il pannello la griglia deve crescere, non restare fissa: "
+                        + piccolo.gridSize() + " -> " + grande.gridSize());
+        assertTrue(grande.cellSize() > piccolo.cellSize(),
+                "le celle devono scalare con il pannello");
     }
 
     @Test

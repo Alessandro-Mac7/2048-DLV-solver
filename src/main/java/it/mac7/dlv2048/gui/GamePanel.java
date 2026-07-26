@@ -12,20 +12,25 @@ import java.awt.event.KeyListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 import javax.swing.JPanel;
 import javax.swing.SwingWorker;
+import javax.swing.Timer;
 
 import it.mac7.dlv2048.core.Board;
 import it.mac7.dlv2048.core.Direction;
 import it.mac7.dlv2048.core.Game;
 import it.mac7.dlv2048.core.GameState;
+import it.mac7.dlv2048.core.MoveResult;
+import it.mac7.dlv2048.core.TileMove;
 import it.mac7.dlv2048.solver.SolverOutcome;
 import it.mac7.dlv2048.solver.SolverStatus;
 
 @SuppressWarnings("serial")
-public class GamePanel extends JPanel implements Runnable, KeyListener{
+public class GamePanel extends JPanel implements KeyListener{
 
 	static final Color[] COLOR_TABLE = {
 	        new Color(0x701710), new Color(0xFFE4C3), new Color(0xfff4d3),
@@ -43,12 +48,21 @@ public class GamePanel extends JPanel implements Runnable, KeyListener{
 		return Math.max(0, Math.min(i, COLOR_TABLE.length - 1));
 	}
 
+	/** Geometria della griglia per le dimensioni correnti del pannello. */
+	record Layout(int gridX, int gridY, int gridSize, int cellSize, int gap) {
+		int cellX(int col) { return gridX + gap + col * (cellSize + gap); }
+		int cellY(int row) { return gridY + gap + row * (cellSize + gap); }
+	}
+
+	private static final int PADDING = 40;
+	private static final int MIN_GRID_SIZE = 160;
+
+	/** Durata dello scivolamento/fusione: abbastanza breve da non far sembrare il gioco lento. */
+	private static final long DURATA_ANIMAZIONE_MS = 130;
+
 	private Color gridColor = new Color(0xBBADA0);
     private Color emptyColor = new Color(0xCDC1B4);
     private Color startColor = new Color(0xFFEBCD);
-
-    private Thread thread;
-	private boolean goal=false;
 
     private final Game game;
 
@@ -60,6 +74,19 @@ public class GamePanel extends JPanel implements Runnable, KeyListener{
      * osserva il pannello da fuori dall'EDT (i test).
      */
     private volatile boolean solverInCorso;
+
+    /**
+     * Guida il ridisegno durante lo scivolamento/fusione delle tessere: parte
+     * solo quando una mossa sposta qualcosa e si ferma da se' a fine
+     * animazione. Prima qui girava un thread perenne in busy-loop a 60 fps
+     * anche a partita ferma; ora, a riposo, non gira nulla.
+     */
+    private final Timer animazioneTimer;
+    private List<TileMove> movimentiInCorso = List.of();
+    private long inizioAnimazione;
+
+    /** Osservatori dei cambi di stato (punteggio, tessera massima, solver): es. il pannello di stato. */
+    private final List<Runnable> ascoltatori = new ArrayList<>();
 
     public GamePanel(){
     	this(new Game());
@@ -74,6 +101,8 @@ public class GamePanel extends JPanel implements Runnable, KeyListener{
 
     	this.game = game;
 
+    	this.animazioneTimer = new Timer(1000 / 60, e -> avanzaAnimazione());
+
         addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
@@ -81,9 +110,39 @@ public class GamePanel extends JPanel implements Runnable, KeyListener{
                     game.inizia();
                     ultimoEsitoSolver = null;
                 }
-                repaint();
+                notificaCambioStato();
             }
         });
+    }
+
+    /** Registra un osservatore invocato a ogni cambio di stato reale (non a ogni frame). */
+    public void aggiungiAscoltatore(Runnable r) {
+    	ascoltatori.add(r);
+    }
+
+    private void notificaCambioStato() {
+    	for (Runnable r : ascoltatori) r.run();
+    	repaint();
+    }
+
+    private void avanzaAnimazione() {
+    	long trascorso = System.currentTimeMillis() - inizioAnimazione;
+    	if (trascorso >= DURATA_ANIMAZIONE_MS) {
+    		animazioneTimer.stop();
+    		movimentiInCorso = List.of();
+    	}
+    	repaint();
+    }
+
+    /** Pacchetto-visibile per i test: vero mentre l'animazione di una mossa sta girando. */
+    boolean animazioneInCorso() {
+    	return animazioneTimer.isRunning();
+    }
+
+    private void avviaAnimazione(MoveResult r) {
+    	movimentiInCorso = r.movimenti();
+    	inizioAnimazione = System.currentTimeMillis();
+    	animazioneTimer.start();
     }
 
 	@Override
@@ -96,97 +155,143 @@ public class GamePanel extends JPanel implements Runnable, KeyListener{
         drawGrid(g);
     }
 
+    /** Geometria calcolata dalle dimensioni correnti del pannello: la griglia segue il ridimensionamento. */
+    Layout geometria() {
+    	int w = Math.max(getWidth(), MIN_GRID_SIZE + PADDING * 2);
+    	int h = Math.max(getHeight(), MIN_GRID_SIZE + PADDING * 2);
+    	int side = Math.max(MIN_GRID_SIZE, Math.min(w, h) - PADDING * 2);
+    	int gridX = (w - side) / 2;
+    	int gridY = (h - side) / 2;
+    	int gap = Math.max(4, side / 70);
+    	int cellSize = (side - gap * (Board.SIZE + 1)) / Board.SIZE;
+    	return new Layout(gridX, gridY, side, cellSize, gap);
+    }
+
 	public void drawGrid(Graphics2D g) {
+		Layout lay = geometria();
+
         g.setColor(gridColor);
-        g.fillRoundRect(200, 100, 499, 499, 15, 15);
+        g.fillRoundRect(lay.gridX(), lay.gridY(), lay.gridSize(), lay.gridSize(), 15, 15);
 
         if (game.stato() == GameState.RUNNING) {
-
-            for (int r = 0; r < Board.SIZE; r++) {
-                for (int c = 0; c < Board.SIZE; c++) {
-                    if (game.board().valueAt(r, c) == 0) {
-                        g.setColor(emptyColor);
-                        g.fillRoundRect(215 + c * 121, 115 + r * 121, 106, 106, 7, 7);
-                    } else {
-                        drawTile(g, r, c);
-                    }
-                }
-            }
+        	drawTiles(g, lay);
         } else {
-            g.setColor(startColor);
-            g.fillRoundRect(215, 115, 469, 469, 7, 7);
-
-            g.setColor(gridColor.darker());
-            g.setFont(new Font("SansSerif", Font.BOLD, 128));
-            g.drawString("2048", 310, 270);
-
-            g.setFont(new Font("SansSerif", Font.BOLD, 20));
-
-            if (game.stato() == GameState.WON) {
-                g.drawString("Vittoria!", 390, 350);
-
-            } else if (game.stato() == GameState.OVER)
-                g.drawString("Hai perso", 400, 350);
-
-            g.setColor(gridColor);
-            g.drawString("Clicca per iniziare la partita", 330, 470);
-            g.drawString("(usa le frecce per muoverti e premi", 310, 520);
-            g.drawString(" S per avere un suggerimento)", 310, 545);
-        }
-
-        SolverOutcome esito = ultimoEsitoSolver;
-        if (solverInCorso) {
-            g.setColor(gridColor.darker());
-            g.setFont(new Font("SansSerif", Font.BOLD, 16));
-            g.drawString("DLV sta pensando...", 215, 625);
-        } else if (esito != null && esito.status() != SolverStatus.OK) {
-            g.setColor(Color.RED.darker());
-            g.setFont(new Font("SansSerif", Font.BOLD, 16));
-            g.drawString("DLV: " + esito.status().messaggio(), 215, 625);
+        	drawSchermataIniziale(g, lay);
         }
     }
 
-    void drawTile(Graphics2D g, int r, int c) {
-        int value = game.board().valueAt(r, c);
+	private void drawTiles(Graphics2D g, Layout lay) {
+		for (int r = 0; r < Board.SIZE; r++) {
+			for (int c = 0; c < Board.SIZE; c++) {
+				g.setColor(emptyColor);
+				g.fillRoundRect(lay.cellX(c), lay.cellY(r), lay.cellSize(), lay.cellSize(), 7, 7);
+			}
+		}
 
+		if (animazioneTimer.isRunning()) {
+			double t = easeOut(Math.min(1.0, (System.currentTimeMillis() - inizioAnimazione) / (double) DURATA_ANIMAZIONE_MS));
+			for (TileMove m : movimentiInCorso) {
+				int x0 = lay.cellX(m.fromCol());
+				int y0 = lay.cellY(m.fromRow());
+				int x1 = lay.cellX(m.toCol());
+				int y1 = lay.cellY(m.toRow());
+				int x = (int) Math.round(x0 + (x1 - x0) * t);
+				int y = (int) Math.round(y0 + (y1 - y0) * t);
+				drawTileAt(g, lay, x, y, 1 << m.esponenteIniziale());
+			}
+		} else {
+			for (int r = 0; r < Board.SIZE; r++) {
+				for (int c = 0; c < Board.SIZE; c++) {
+					int v = game.board().valueAt(r, c);
+					if (v != 0) drawTile(g, lay, r, c, v);
+				}
+			}
+		}
+	}
+
+	private static double easeOut(double t) {
+		double u = 1 - t;
+		return 1 - u * u * u;
+	}
+
+	private void drawSchermataIniziale(Graphics2D g, Layout lay) {
+        g.setColor(startColor);
+        int inset = lay.gap() * 2;
+        g.fillRoundRect(lay.gridX() + inset, lay.gridY() + inset,
+                lay.gridSize() - inset * 2, lay.gridSize() - inset * 2, 7, 7);
+
+        int cx = lay.gridX() + lay.gridSize() / 2;
+        int titoloSize = Math.max(24, lay.gridSize() / 4);
+        int testoSize = Math.max(12, lay.gridSize() / 25);
+
+        g.setColor(gridColor.darker());
+        Font titolo = new Font("SansSerif", Font.BOLD, titoloSize);
+        g.setFont(titolo);
+        drawCentrato(g, "2048", cx, lay.gridY() + lay.gridSize() / 3);
+
+        Font testo = new Font("SansSerif", Font.BOLD, testoSize);
+        g.setFont(testo);
+
+        if (game.stato() == GameState.WON) {
+            drawCentrato(g, "Vittoria!", cx, lay.gridY() + lay.gridSize() / 2);
+        } else if (game.stato() == GameState.OVER) {
+            drawCentrato(g, "Hai perso", cx, lay.gridY() + lay.gridSize() / 2);
+        }
+
+        g.setColor(gridColor);
+        int riga = lay.gridY() + lay.gridSize() * 2 / 3;
+        int passo = testoSize + 6;
+        drawCentrato(g, "Clicca per iniziare la partita", cx, riga);
+        drawCentrato(g, "(usa le frecce per muoverti e premi", cx, riga + passo);
+        drawCentrato(g, " S per avere un suggerimento)", cx, riga + passo * 2);
+	}
+
+	private static void drawCentrato(Graphics2D g, String s, int cx, int baseline) {
+		FontMetrics fm = g.getFontMetrics();
+		g.drawString(s, cx - fm.stringWidth(s) / 2, baseline);
+	}
+
+    void drawTile(Graphics2D g, Layout lay, int r, int c, int value) {
+    	drawTileAt(g, lay, lay.cellX(c), lay.cellY(r), value);
+    }
+
+    private void drawTileAt(Graphics2D g, Layout lay, int x, int y, int value) {
         g.setColor(COLOR_TABLE[indiceColore(value)]);
-        g.fillRoundRect(215 + c * 121, 115 + r * 121, 106, 106, 7, 7);
+        g.fillRoundRect(x, y, lay.cellSize(), lay.cellSize(), 7, 7);
         String s = String.valueOf(value);
 
         g.setColor(value < 128 ? COLOR_TABLE[0] : COLOR_TABLE[1]);
 
+        int fontSize = Math.max(10, lay.cellSize() * 2 / 5);
+        g.setFont(new Font("SansSerif", Font.BOLD, fontSize));
         FontMetrics fm = g.getFontMetrics();
         int asc = fm.getAscent();
         int dec = fm.getDescent();
 
-        int x = 215 + c * 121 + (106 - fm.stringWidth(s)) / 2;
-        int y = 115 + r * 121 + (asc + (106 - (asc + dec)) / 2);
+        int tx = x + (lay.cellSize() - fm.stringWidth(s)) / 2;
+        int ty = y + (asc + (lay.cellSize() - (asc + dec)) / 2);
 
-        g.drawString(s, x, y);
+        g.drawString(s, tx, ty);
     }
 
 	public void keyPressed(KeyEvent e) {
 		switch (e.getKeyCode()) {
-        case KeyEvent.VK_UP -> {
-        	if(game.stato() == GameState.RUNNING)
-        		game.muovi(Direction.UP);
-        }
-        case KeyEvent.VK_DOWN -> {
-        	if(game.stato() == GameState.RUNNING)
-        		game.muovi(Direction.DOWN);
-        }
-        case KeyEvent.VK_LEFT -> {
-        	if(game.stato() == GameState.RUNNING)
-        		game.muovi(Direction.LEFT);
-        }
-        case KeyEvent.VK_RIGHT -> {
-        	if(game.stato() == GameState.RUNNING)
-        		game.muovi(Direction.RIGHT);
-        }
+        case KeyEvent.VK_UP -> tentaMossa(Direction.UP);
+        case KeyEvent.VK_DOWN -> tentaMossa(Direction.DOWN);
+        case KeyEvent.VK_LEFT -> tentaMossa(Direction.LEFT);
+        case KeyEvent.VK_RIGHT -> tentaMossa(Direction.RIGHT);
         case KeyEvent.VK_S -> avviaSuggerimento();
 		default -> { }
 		}
+	}
 
+	private void tentaMossa(Direction d) {
+		if (game.stato() != GameState.RUNNING) return;
+		MoveResult r = game.muoviDettagliato(d);
+		if (r.moved()) {
+			avviaAnimazione(r);
+			notificaCambioStato();
+		}
 	}
 
 	/**
@@ -205,7 +310,7 @@ public class GamePanel extends JPanel implements Runnable, KeyListener{
 
 		solverInCorso = true;
 		ultimoEsitoSolver = null;
-		repaint();
+		notificaCambioStato();
 
 		Board boardRichiesta = game.board();
 
@@ -224,7 +329,10 @@ public class GamePanel extends JPanel implements Runnable, KeyListener{
 					// calcolato su una board che non e' piu' quella attuale va scartato
 					// per intero, non solo la mossa.
 					if (game.stato() == GameState.RUNNING && game.board().equals(boardRichiesta)) {
-						esito.move().ifPresent(game::muovi);
+						esito.move().ifPresent(d -> {
+							MoveResult r = game.muoviDettagliato(d);
+							if (r.moved()) avviaAnimazione(r);
+						});
 						ultimoEsitoSolver = esito;
 					}
 				} catch (InterruptedException e) {
@@ -233,7 +341,7 @@ public class GamePanel extends JPanel implements Runnable, KeyListener{
 					ultimoEsitoSolver = SolverOutcome.fallito(SolverStatus.ERRORE, 0);
 				} finally {
 					solverInCorso = false;
-					repaint();
+					notificaCambioStato();
 				}
 			}
 		}.execute();
@@ -249,56 +357,13 @@ public class GamePanel extends JPanel implements Runnable, KeyListener{
 		return ultimoEsitoSolver;
 	}
 
+	/** Pacchetto-visibile: la partita mostrata, per il pannello di stato. */
+	Game game() {
+		return game;
+	}
+
 	public void keyReleased(KeyEvent arg0) {}
 
 	public void keyTyped(KeyEvent arg0) {}
-
-	public void run() {
-		int fps = 60;
-		double timePerUpdate = 1000000000 / fps;
-		double delta = 0;
-		long now;
-		long lastTime = System.nanoTime();
-		long timer = 0;
-
-		while(goal){
-
-			now = System.nanoTime();
-			delta += (now - lastTime) / timePerUpdate;
-			timer += now - lastTime;
-			lastTime = now;
-			if(delta >= 1){
-				repaint();
-				delta--;
-			}
-			if(timer >= 1000000000){
-				timer = 0;
-			}
-		}
-
-		stop();
-
-	}
-
-	public synchronized void start(){
-		if(goal)
-			return;
-		goal=true;
-		thread = new Thread(this);
-		thread.start();
-
-	}
-
-	public synchronized void stop(){
-		if(!goal)
-			return;
-		goal=false;
-		try{
-			thread.join();
-		}
-		catch (InterruptedException e){
-			e.printStackTrace();
-		}
-	}
 
 }

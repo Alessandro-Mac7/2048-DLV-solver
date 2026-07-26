@@ -72,6 +72,11 @@ step(N)   :- stato(N), haSucc(N), haMossa(N).
 morto(N)  :- stato(N), not haMossa(N).
 foglia(N) :- stato(N), not haSucc(N).
 
+% solo questi stati vengono letti: gli aggregati del programma base costano, e
+% chiederli sui nodi interni dell'albero sarebbe lavoro buttato
+valutabile(N) :- radice(N).
+valutabile(N) :- foglia(N).
+
 % ============================================================
 % VALUTAZIONE DELLE FOGLIE
 % Un solo numero per foglia: il #max non sa fare confronti lessicografici,

@@ -84,8 +84,14 @@ dom24(0..24).
 domE(1..17).
 domM(0..32).
 
+% Valutare uno stato costa tre aggregati, e un aggregato che dipende dal guess
+% resta indeciso fino alla risoluzione: vanno chiesti solo per gli stati che
+% qualcuno legge davvero. Nella catena lineare sono tutti; con l'avversario
+% l'albero ha centinaia di nodi e servono solo le foglie.
+valutabile(T) :- time(T), not spawnEsplicito.
+
 occ(T,R,C) :- at(T,R,C,_).
-piene(T,M) :- time(T), dom16(M), #count{R,C : occ(T,R,C)} = M.
+piene(T,M) :- valutabile(T), dom16(M), #count{R,C : occ(T,R,C)} = M.
 
 % ---- CARICO: occupazione reale piu' le tessere che il gioco aggiungera'
 % Questo termine e' il cuore della milestone. Senza spawn l'occupazione lungo
@@ -124,11 +130,11 @@ margineIniziale :- minLibere(K), piene(0,P), 16-P > K.
 :- margineIniziale, minLibere(K), time(T), T>0, carico(T,M), M > 16-K,
    not spawnEsplicito.
 
-maxstato(T,E) :- time(T), domE(E), #max{E1 : at(T,_,_,E1)} = E.
+maxstato(T,E) :- valutabile(T), domE(E), #max{E1 : at(T,_,_,E1)} = E.
 inangolo(T)   :- at(T,0,0,E), maxstato(T,E).
 
 % monotonia di riga: coppie adiacenti crescenti (euristica "scala")
-disordine(T,N) :- time(T), dom24(N),
+disordine(T,N) :- valutabile(T), dom24(N),
                   #count{R,C : at(T,R,C,E), C1=C+1, at(T,R,C1,E1), E1>E} = N.
 
 % numero di merge nel piano (proxy economico del punteggio)

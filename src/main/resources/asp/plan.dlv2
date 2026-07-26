@@ -54,8 +54,14 @@ scnt(T,D,L,K1,N)  :- scnt(T,D,L,K,N), not soc(T,D,L,K), K1=K+1, K1<=3.
 srank(T,D,L,K,N)  :- soc(T,D,L,K), scnt(T,D,L,K,N).
 
 % ---- stato successivo
-at(T1,R,C,E) :- surv(T,D,L,K,E), srank(T,D,L,K,J), lin(D,R,C,L,J),
-                move(T,D), T1=T+1, time(T1).
+% L'indirezione esito -> at non e' decorativa: la sovrapposizione avversariale
+% deve poter infilare una tessera FRA la mossa e lo stato successivo. Senza di
+% essa "cella libera dopo la mossa" si leggerebbe da at, che a sua volta
+% conterrebbe la tessera infilata, e il ciclo negativo renderebbe ogni spawn
+% privo di supporto: nessuna tessera verrebbe mai piazzata.
+esito(T1,R,C,E) :- surv(T,D,L,K,E), srank(T,D,L,K,J), lin(D,R,C,L,J),
+                   move(T,D), T1=T+1, time(T1).
+at(T,R,C,E) :- esito(T,R,C,E).
 
 % ---- legalita': deve esserci un merge o uno scorrimento
 legale(T,D) :- comp(T,D,L,K,E), K1=K+1, comp(T,D,L,K1,E).
@@ -63,7 +69,7 @@ legale(T,D) :- locc(T,D,L,P), lrank(T,D,L,P,K), K < P.
 :- move(T,D), not legale(T,D).
 
 % ============================================================
-% VALUTAZIONE DELLO STATO FINALE
+% VALUTAZIONE DELLO STATO A OGNI PASSO
 % domini limitati: obbligatori perche' questi aggregati dipendono
 % dal guess disgiuntivo
 % ============================================================
@@ -72,24 +78,62 @@ dom24(0..24).
 domE(1..17).
 domM(0..32).
 
-occfin(R,C) :- at(TH,R,C,_), horizon(TH).
-piene(M)    :- dom16(M), #count{R,C : occfin(R,C)} = M.
+occ(T,R,C) :- at(T,R,C,_).
+piene(T,M) :- time(T), dom16(M), #count{R,C : occ(T,R,C)} = M.
 
-maxfin(E) :- domE(E), #max{E1 : at(TH,_,_,E1), horizon(TH)} = E.
-inangolo  :- at(TH,0,0,E), horizon(TH), maxfin(E).
+% ---- CARICO: occupazione reale piu' le tessere che il gioco aggiungera'
+% Questo termine e' il cuore della milestone. Senza spawn l'occupazione lungo
+% il piano e' monotona NON CRESCENTE: le mosse possono solo far calare il
+% numero di tessere. Ne segue che valutare ogni passo, da solo, non produce
+% alcun segnale di rischio, e che un vincolo su piene(T) sarebbe o sempre
+% soddisfatto o gia' violato a T=0. Il gioco vero pero' aggiunge UNA tessera
+% per mossa: dopo T mosse ce ne sono T in piu' di quante il piano ne mostri.
+% E' contando quelle che la board si riempie anche nel modello.
+%
+% Poiche' piene(T) = piene(0) - merge fatti finora, il carico dice anche una
+% cosa che nessun altro termine diceva: per non affogare bisogna fondere
+% almeno tanto quanto lo spawn riempie.
+fantasmi(T,T) :- time(T), not spawnEsplicito.
+fantasmi(T,0) :- time(T), spawnEsplicito.   % la sovrapposizione le piazza davvero
+carico(T,M)  :- piene(T,P), fantasmi(T,F), M=P+F, dom16(M).
+carico(T,16) :- piene(T,P), fantasmi(T,F), P+F > 16.
+
+% ---- penalita' di riempimento PROGRESSIVA: (M-4)^2 troncato a zero.
+% Con un costo lineare un piano che passa per una posizione stretta costa
+% quanto uno che tiene la board arieggiata; con uno convesso il passaggio da
+% 13 a 14 occupate costa quanto quello da 4 a 9 messi insieme.
+costoCarico(0,0).   costoCarico(1,0).   costoCarico(2,0).   costoCarico(3,0).
+costoCarico(4,0).   costoCarico(5,1).   costoCarico(6,4).   costoCarico(7,9).
+costoCarico(8,16).  costoCarico(9,25).  costoCarico(10,36). costoCarico(11,49).
+costoCarico(12,64). costoCarico(13,81). costoCarico(14,100).
+costoCarico(15,121). costoCarico(16,144).
+
+% ---- vincolo rigido: mai scendere sotto K caselle libere lungo il piano.
+% Vale sul carico, non su piene, per il motivo detto sopra. Si attiva solo se
+% la board di partenza ha gia' quel margine: imporlo su una board gia' stretta
+% renderebbe il programma incoerente proprio quando serve una mossa, e il
+% solver rifiuterebbe di muovere invece di giocare la meno peggio.
+minLibere(2).
+margineIniziale :- minLibere(K), piene(0,P), 16-P > K.
+:- margineIniziale, minLibere(K), time(T), T>0, carico(T,M), M > 16-K.
+
+maxstato(T,E) :- time(T), domE(E), #max{E1 : at(T,_,_,E1)} = E.
+inangolo(T)   :- at(T,0,0,E), maxstato(T,E).
 
 % monotonia di riga: coppie adiacenti crescenti (euristica "scala")
-disordine(N) :- dom24(N),
-                #count{R,C : at(TH,R,C,E), horizon(TH), C1=C+1,
-                             at(TH,R,C1,E1), E1>E} = N.
+disordine(T,N) :- time(T), dom24(N),
+                  #count{R,C : at(T,R,C,E), C1=C+1, at(T,R,C1,E1), E1>E} = N.
 
 % numero di merge nel piano (proxy economico del punteggio)
 nmerge(N) :- domM(N), #count{T,D,L,K : mrg(T,D,L,K)} = N.
 
 % ============================================================
 % OTTIMIZZAZIONE (livello piu' alto = piu' importante)
+% T=0 e' escluso: e' la board data, identica per ogni piano candidato, quindi
+% aggiungerebbe solo una costante. Il termine discriminante T serve a far
+% SOMMARE i passi invece di collassarli in uno.
 % ============================================================
-:~ not inangolo.      [1@4]
-:~ piene(M).          [M@3, M]
-:~ disordine(N).      [N@2, N]
-:~ nmerge(N), C=32-N. [C@1, C]
+:~ time(T), T>0, not inangolo(T).             [1@4, T]
+:~ time(T), T>0, carico(T,M), costoCarico(M,W). [W@3, T]
+:~ time(T), T>0, disordine(T,N).              [N@2, T]
+:~ nmerge(N), C=32-N.                         [C@1]

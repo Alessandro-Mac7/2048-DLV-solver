@@ -53,13 +53,38 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@25 DLV2_HOME=/percorso/con/dlv2 ./mvnw test
 I test che richiedono DLV2 si auto-disabilitano (skip, non fallimento) se il
 binario non e' raggiungibile tramite `DlvBinary.locate`.
 
+## Banco di prova
+
+`src/test/java/it/mac7/dlv2048/bench/Autoplay.java` fa giocare partite complete
+pilotate dal solver e riporta punteggio, mosse e tessera massima aggregati. Non
+e' un test JUnit e non gira con la suite: una partita costa minuti.
+
+```bash
+JAVA_HOME=/opt/homebrew/opt/openjdk@25 ./mvnw -q test-compile
+DLV2_HOME=/percorso/con/dlv2 /opt/homebrew/opt/openjdk@25/bin/java \
+    -cp target/classes:target/test-classes \
+    it.mac7.dlv2048.bench.Autoplay --partite=24 --orizzonte=2
+```
+
+Opzioni: `--asp=<file>` per usare un altro programma ASP (per confrontare una
+modifica con il riferimento estratto da `git show`), `--avversario` per il
+modello di M3, `--seme`, `--thread`.
+
+Serve a rispondere all'unica domanda che conta su un cambiamento di strategia —
+il solver gioca meglio o no — e la risposta richiede **almeno una ventina di
+partite**. Il seme fissa la sequenza casuale ma non la partita: DLV2 sceglie
+arbitrariamente fra piani di costo uguale, quindi due programmi che differiscono
+per una riga irrilevante divergono alla prima parita'. Con una deviazione
+standard sui punteggi intorno al 40% della media, tre partite appaiate non
+distinguono un modello migliore dal rumore.
+
 ## Come funziona il solver
 
 La board viene tradotta in fatti ASP (`at(0,R,C,E)`, esponenti: valore = 2^E) e
 concatenata al programma `src/main/resources/asp/plan.dlv2`, che modella la
 meccanica di 2048 come problema di pianificazione: indovina una sequenza di
-mosse, ne deriva gli stati e ottimizza lo stato finale con weak constraint su
-angolo, riempimento, monotonia e numero di merge.
+mosse, ne deriva gli stati e li ottimizza con weak constraint su angolo,
+riempimento, monotonia e numero di merge.
 
 Il solver **non** usa un orizzonte fisso: usa l'**approfondimento iterativo**.
 Parte da orizzonte 1 e sale di uno alla volta, conservando sempre l'ultimo

@@ -78,30 +78,34 @@ valutabile(N) :- radice(N).
 valutabile(N) :- foglia(N).
 
 % ============================================================
-% VALUTAZIONE DELLE FOGLIE
-% Un solo numero per foglia: il #max non sa fare confronti lessicografici,
-% quindi i quattro criteri del programma base vanno fusi in uno scalare.
+% IL PEGGIO, CRITERIO PER CRITERIO
+%
+% La prima versione fondeva i criteri in un solo numero per foglia e ne
+% prendeva il #max. Corretto ma inservibile: lo scalare moltiplica i valori
+% candidati (17 riempimenti x 2 angoli x 25 disordini per ogni foglia, circa
+% 7000 atomi) e il solver deve deciderli tutti — 4-6 secondi per una mossa in
+% cui il giocatore ha quattro alternative. Prendendo il massimo separatamente
+% per criterio gli aggregati diventano tre e piccoli, e l'ordine torna
+% lessicografico come nel programma base.
+%
+% Il peggio di ogni criterio puo' venire da rami diversi, quindi la
+% valutazione e' piu' pessimista del min-max esatto: e' un avversario un po'
+% piu' cattivo del vero, mai uno piu' buono.
 % ============================================================
+domRami(0..16).
+
+% quante caselle chiudono la partita: e' il segnale che il modello lineare non
+% ha a nessuna profondita'
+quantiMorti(N) :- domRami(N), #count{M : morto(M)} = N.
+
+% la mossa toglie il massimo dall'angolo (il piazzamento di un 2 non lo sposta,
+% quindi questo criterio non dipende dal ramo)
+fuoriAngolo :- foglia(N), not inangolo(N).
 
 % La foglia e' gia' lo stato dopo il piazzamento: nessuna tessera fantasma da
 % aggiungere, il conteggio e' quello vero.
-caricoFoglia(N,M) :- foglia(N), piene(N,M).
-
-penAngolo(N,0)  :- foglia(N), inangolo(N).
-penAngolo(N,60) :- foglia(N), not inangolo(N).
-
-valore(N,V)   :- foglia(N), penAngolo(N,A), caricoFoglia(N,M), costoCarico(M,W),
-                 disordine(N,Dz), V = A + W + 3*Dz.
-valore(N,400) :- morto(N).   % l'avversario ha chiuso la partita: peggio di tutto
-
-domV(0..400).
-peggiore(V) :- domV(V), #max{V1 : valore(_,V1)} = V.
-
-% Il massimo e' un criterio grossolano: appena UNA casella e' letale, ogni
-% mossa vale 400 e non si distingue piu' "una sola casella letale su otto" da
-% "tutte letali". Contarle rompe il pareggio nel verso giusto.
-domRami(0..16).
-quantiMorti(N) :- domRami(N), #count{M : morto(M)} = N.
+peggiorCarico(M)    :- dom16(M), #max{P : foglia(N), piene(N,P)} = M.
+peggiorDisordine(D) :- dom24(D), #max{Dz : foglia(N), disordine(N,Dz)} = D.
 
 % Merge della sola mossa alla radice: quelli nei rami non sono confrontabili
 % fra loro, e sommarli premierebbe i rami invece della mossa da scegliere.
@@ -111,6 +115,8 @@ quantiMorti(N) :- domRami(N), #count{M : morto(M)} = N.
 dom8(0..8).
 mergeRadice(N) :- dom8(N), radice(R), #count{D,L,K : mrg(R,D,L,K)} = N.
 
-:~ peggiore(V).             [V@3]
-:~ quantiMorti(N).          [N@2]
-:~ mergeRadice(N), C=8-N.   [C@1]
+:~ quantiMorti(N).                       [N@5]
+:~ fuoriAngolo.                          [1@4]
+:~ peggiorCarico(M), costoCarico(M,W).   [W@3]
+:~ peggiorDisordine(D).                  [D@2]
+:~ mergeRadice(N), C=8-N.                [C@1]

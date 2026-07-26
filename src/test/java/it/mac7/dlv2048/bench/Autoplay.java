@@ -43,9 +43,19 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@code --asp=<file>}: il riferimento si estrae dalla storia con
  * {@code git show <rev>:src/main/resources/asp/plan.dlv2 > /tmp/rif.dlv2}.
  *
+ * <p>Con {@code --avversario} il programma diventa base + sovrapposizione e
+ * l'orizzonte conta le mosse dell'albero di gioco, non i passi di una catena.
+ *
  * <p>L'orizzonte e' FISSO, non a budget: un budget temporale farebbe dipendere
  * la profondita' raggiunta dal carico della macchina, e due esecuzioni della
  * stessa configurazione non sarebbero piu' confrontabili.
+ *
+ * <p><b>Quante partite.</b> Non meno di venti. Il seme fissa la sequenza
+ * casuale ma non la partita: DLV2 sceglie arbitrariamente fra piani di costo
+ * uguale, quindi due programmi che differiscono per una riga irrilevante
+ * divergono alla prima parita' e da li' in poi giocano partite diverse. Con una
+ * deviazione standard sui punteggi dell'ordine del 40% della media, due o tre
+ * partite appaiate non distinguono un modello migliore dal rumore.
  */
 public final class Autoplay {
 

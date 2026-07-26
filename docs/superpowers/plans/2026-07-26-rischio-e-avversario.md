@@ -86,3 +86,46 @@ numeri.
 
 Suite completa con `DLV2_HOME` impostato, e aggiornamento di README e design con i
 numeri realmente misurati.
+
+---
+
+## Cosa e' emerso davvero (aggiornato in corso d'opera)
+
+### La metodologia va difesa prima dei risultati
+
+Il seme fissa la sequenza casuale, non la partita: **DLV2 sceglie arbitrariamente
+fra piani di costo uguale**, quindi due programmi che differiscono per una riga
+irrilevante possono divergere alla prima parita' e da li' in poi giocare due
+partite diverse. Su una distribuzione con deviazione standard di ~2200 punti, due
+o tre partite non dicono nulla. Tutti i confronti qui sotto sono su 24 partite a
+semi appaiati; le conclusioni prese su campioni piccoli, durante il lavoro, si
+sono rivelate sbagliate almeno due volte.
+
+### Errori misurati, non ipotizzati
+
+1. **Angolo a ogni passo.** `:~ ... not inangolo(T). [1@4, T]` somma un punto per
+   ogni passo in cui il massimo non e' nell'angolo. A livello 4 quel termine
+   schiaccia lessicograficamente tutto il resto, e la sua risoluzione cresce con
+   l'orizzonte. Un criterio binario a priorita' massima va tenuto binario.
+2. **Penalita' di riempimento troncata.** `max(0,M-4)^2` vale zero fino a quattro
+   caselle occupate: su board larga il livello 3 diventa piatto, sparisce la
+   pressione a fondere e il solver si limita a tenere le righe in ordine. 2780
+   punti contro 5207 del riferimento, otto partite appaiate. La penalita' e'
+   diventata `M^2`, che cresce ovunque.
+3. **Pesi negativi.** `:~ p(N), C=8-N. [C@1]` con `N` su un dominio che arriva a
+   32 produce pesi negativi, e DLV2 riporta un costo che non e' quello scritto
+   (305 invece di 5, misurato). Ogni `C=K-N` vuole un dominio di `N` che si ferma
+   a `K`.
+
+### Perche' l'avversario non e' un guess disgiuntivo
+
+Era il punto di partenza previsto e non funziona: i weak constraint minimizzano su
+tutto l'answer set, mosse e spawn insieme, quindi un `spawn | nospawn` darebbe un
+avversario **complice**, non ostile — un modello ottimista, peggio che nessun
+modello. Il "per ogni spawn" richiede saturazione, che pretende un controllo
+monotono nelle atomiche indovinate; la meccanica di 2048 non lo e' in nessuna
+direzione, perche' una tessera in piu' riempie una casella ma puo' anche creare
+una coppia fondibile. Le mosse dell'avversario sono pero' al massimo 16: si aprono
+tutte come rami, si lascia al giocatore una mossa per ramo e si prende il `#max`.
+E' min-max alternato esatto, e resta in NP — la vetrina Σ²p annunciata nel design
+non c'era.

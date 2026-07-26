@@ -143,9 +143,17 @@ margineIniziale :- minLibere(K), piene(0,P), 16-P > K.
 maxstato(T,E) :- time(T), domE(E), #max{E1 : at(T,_,_,E1)} = E.
 inangolo(T)   :- at(T,0,0,E), maxstato(T,E).
 
-% monotonia di riga: coppie adiacenti crescenti (euristica "scala")
+% monotonia: coppie adiacenti in cui il valore CRESCE allontanandosi
+% dall'angolo di ancoraggio (0,0), cioe' le rotture della "scala".
+%
+% Orizzontali E VERTICALI. Contare solo le righe non era una semplificazione
+% ma una lacuna: nessuna regola guardava le colonne, quindi il modello poteva
+% impilare righe ordinatissime in ordine fra loro casuale e non pagare nulla.
+salita(T,R,C,R,C1) :- at(T,R,C,E), C1=C+1, at(T,R,C1,E1), E1>E.
+salita(T,R,C,R1,C) :- at(T,R,C,E), R1=R+1, at(T,R1,C,E1), E1>E.
+
 disordine(T,N) :- time(T), dom24(N),
-                  #count{R,C : at(T,R,C,E), C1=C+1, at(T,R,C1,E1), E1>E} = N.
+                  #count{R,C,R2,C2 : salita(T,R,C,R2,C2)} = N.
 
 % numero di merge nel piano (proxy economico del punteggio)
 nmerge(N) :- domM(N), #count{T,D,L,K : mrg(T,D,L,K)} = N.

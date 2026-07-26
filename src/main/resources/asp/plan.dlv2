@@ -80,6 +80,44 @@ legale(T,D) :- comp(T,D,L,K,E), K1=K+1, comp(T,D,L,K1,E).
 legale(T,D) :- locc(T,D,L,P), lrank(T,D,L,P,K), K < P.
 :- move(T,D), not legale(T,D).
 
+% ---- RESTRIZIONE DEL VENTAGLIO
+% L'ancoraggio e' in (0,0): "giu'" e' la direzione che stacca il massimo
+% dall'angolo, e i bot forti non la giocano mai se hanno un'alternativa. Il
+% collo di bottiglia qui e' lo spazio di ricerca, che cresce come 4^H: toglierne
+% una direzione lo porta a 3^H, cioe' a orizzonte 6 un fattore 5,6.
+%
+% PROPRIETA' DI SICUREZZA, non negoziabile: dove una mossa legale esiste il
+% programma deve restare coerente. Due cose la garantiscono.
+%
+% 1) legale/2 NON e' utilizzabile per sapere se un'ALTRA direzione e' giocabile:
+%    passa da lat/5, che ha move(T,D) nel corpo, quindi esiste solo per la
+%    direzione indovinata. Serve un test indipendente dal guess.
+%
+% 2) quel test deve sotto-approssimare o essere esatto. Sotto-approssimare fa
+%    solo perdere potatura; SOVRA-approssimare vieterebbe "giu'" credendo che
+%    esista un'alternativa che non c'e', e il programma sarebbe incoerente
+%    proprio dove serve muovere.
+%
+% altraLegale/1 e' esatto e vale "sinistra oppure su sono legali":
+%   - una casella vuota a sinistra di una tessera nella stessa riga => sinistra
+%     scorre; sopra nella stessa colonna => su scorre;
+%   - due tessere uguali ADIACENTI si fondono; se una coppia fondibile e' piu'
+%     lontana c'e' per forza un buco fra le due, e allora la prima regola ha
+%     gia' concluso.
+% Quando altraLegale(T) vale, sinistra o su e' legale e un modello esiste.
+%
+% step/1 resta un FATTO del chiamante: questa negazione non lo tocca. E' l'errore
+% costato caro all'albero avversariale, dove step/1 era diventato derivato dentro
+% una componente con negazione ricorsiva e il vincolo "a ogni passo serve una
+% mossa" aveva smesso di mordere.
+vietata(d).
+vuota(T,R,C)   :- time(T), idx(R), idx(C), not occ(T,R,C).
+altraLegale(T) :- at(T,R,C,_), vuota(T,R,C2), C2<C.
+altraLegale(T) :- at(T,R,C,_), vuota(T,R2,C), R2<R.
+altraLegale(T) :- at(T,R,C,E), C1=C+1, at(T,R,C1,E).
+altraLegale(T) :- at(T,R,C,E), R1=R+1, at(T,R1,C,E).
+:- move(T,D), vietata(D), altraLegale(T).
+
 % ============================================================
 % VALUTAZIONE DELLO STATO A OGNI PASSO
 % domini limitati: obbligatori perche' questi aggregati dipendono

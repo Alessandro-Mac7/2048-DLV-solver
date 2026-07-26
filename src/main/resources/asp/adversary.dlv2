@@ -97,6 +97,12 @@ valore(N,400) :- morto(N).   % l'avversario ha chiuso la partita: peggio di tutt
 domV(0..400).
 peggiore(V) :- domV(V), #max{V1 : valore(_,V1)} = V.
 
+% Il massimo e' un criterio grossolano: appena UNA casella e' letale, ogni
+% mossa vale 400 e non si distingue piu' "una sola casella letale su otto" da
+% "tutte letali". Contarle rompe il pareggio nel verso giusto.
+domRami(0..16).
+quantiMorti(N) :- domRami(N), #count{M : morto(M)} = N.
+
 % Merge della sola mossa alla radice: quelli nei rami non sono confrontabili
 % fra loro, e sommarli premierebbe i rami invece della mossa da scegliere.
 % Il dominio si ferma a 8 (due merge per linea, quattro linee) e non a domM:
@@ -105,5 +111,6 @@ peggiore(V) :- domV(V), #max{V1 : valore(_,V1)} = V.
 dom8(0..8).
 mergeRadice(N) :- dom8(N), radice(R), #count{D,L,K : mrg(R,D,L,K)} = N.
 
-:~ peggiore(V).             [V@2]
+:~ peggiore(V).             [V@3]
+:~ quantiMorti(N).          [N@2]
 :~ mergeRadice(N), C=8-N.   [C@1]

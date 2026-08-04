@@ -80,6 +80,55 @@ legale(T,D) :- comp(T,D,L,K,E), K1=K+1, comp(T,D,L,K1,E).
 legale(T,D) :- locc(T,D,L,P), lrank(T,D,L,P,K), K < P.
 :- move(T,D), not legale(T,D).
 
+% ---- RESTRIZIONE DEL VENTAGLIO
+% L'ancoraggio e' in (0,0): "giu'" e' la direzione che stacca il massimo
+% dall'angolo, e i bot forti non la giocano mai se hanno un'alternativa. Il
+% collo di bottiglia qui e' lo spazio di ricerca, che cresce come 4^H: toglierne
+% una direzione lo porta a 3^H. Misurato su una board di meta' partita: a
+% orizzonte 6 da 5,4 s a 1,9 s, a orizzonte 10 da oltre due minuti a 12,7 s. Il
+% grounding delle quattro direzioni resta comunque (il vincolo pota la ricerca,
+% non l'istanziazione), ma il programma nuovo finisce piu' veloce del vecchio
+% pur valutando tre criteri posizionali in piu'.
+%
+% PROPRIETA' DI SICUREZZA, non negoziabile: dove una mossa legale esiste il
+% programma deve restare coerente. Due cose la garantiscono.
+%
+% 1) legale/2 NON e' utilizzabile per sapere se un'ALTRA direzione e' giocabile:
+%    passa da lat/5, che ha move(T,D) nel corpo, quindi esiste solo per la
+%    direzione indovinata. Serve un test indipendente dal guess.
+%
+% 2) quel test deve sotto-approssimare o essere esatto. Sotto-approssimare fa
+%    solo perdere potatura; SOVRA-approssimare vieterebbe "giu'" credendo che
+%    esista un'alternativa che non c'e', e il programma sarebbe incoerente
+%    proprio dove serve muovere.
+%
+% altraLegale/1 e' esatto e vale "sinistra oppure su sono legali":
+%   - una casella vuota a sinistra di una tessera nella stessa riga => sinistra
+%     scorre; sopra nella stessa colonna => su scorre;
+%   - due tessere uguali ADIACENTI si fondono; se una coppia fondibile e' piu'
+%     lontana c'e' per forza un buco fra le due, e allora la prima regola ha
+%     gia' concluso.
+% Quando altraLegale(T) vale, sinistra o su e' legale e un modello esiste.
+%
+% step/1 resta un FATTO del chiamante: questa negazione non lo tocca. E' l'errore
+% costato caro all'albero avversariale, dove step/1 era diventato derivato dentro
+% una componente con negazione ricorsiva e il vincolo "a ogni passo serve una
+% mossa" aveva smesso di mordere.
+vietata(d).
+vuota(T,R,C)   :- time(T), idx(R), idx(C), not occ(T,R,C).
+altraLegale(T) :- at(T,R,C,_), vuota(T,R,C2), C2<C.
+altraLegale(T) :- at(T,R,C,_), vuota(T,R2,C), R2<R.
+altraLegale(T) :- at(T,R,C,E), C1=C+1, at(T,R,C1,E).
+altraLegale(T) :- at(T,R,C,E), R1=R+1, at(T,R1,C,E).
+%
+% meccanicaNuda/0 non e' un fatto di questo programma e in esercizio non lo
+% asserisce nessuno: e' la porta di servizio di MeccanicaCoerenteTest, che
+% inchioda una per una TUTTE le direzioni per confrontare board Java e board
+% ASP. Quel confronto riguarda lo scivolamento e la fusione, non la strategia,
+% e senza la porta la restrizione rifiuterebbe proprio la direzione inchiodata
+% lasciando il test senza stato da confrontare.
+:- move(T,D), vietata(D), altraLegale(T), not meccanicaNuda.
+
 % ============================================================
 % VALUTAZIONE DELLO STATO A OGNI PASSO
 % domini limitati: obbligatori perche' questi aggregati dipendono
@@ -141,13 +190,71 @@ margineIniziale :- minLibere(K), piene(0,P), 16-P > K.
 :- margineIniziale, minLibere(K), passo(T), carico(T,M), M > 16-K.
 
 maxstato(T,E) :- time(T), domE(E), #max{E1 : at(T,_,_,E1)} = E.
-inangolo(T)   :- at(T,0,0,E), maxstato(T,E).
 
-% monotonia di riga: coppie adiacenti crescenti (euristica "scala")
+% ---- ANCORAGGIO GRADUATO: distanza di Manhattan del massimo dall'angolo.
+% Il criterio binario "il massimo e' in (0,0)" valutato solo a fine piano non
+% costava nulla ai piani che scacciano il massimo dall'angolo a meta' strada
+% per poi rimettercelo, e messo a ogni passo al livello piu' alto schiacciava
+% tutto il resto (misurato: a H=3 la media crollava da ~5300 a ~3200).
+% Graduato, e dentro la somma posizionale invece che sopra di essa, non ha
+% nessuno dei due difetti.
+%
+% Il minimo perche' due caselle possono contenere lo stesso esponente massimo:
+% conta la piu' vicina all'angolo, non tutte.
+dom6(0..6).
+posMax(T,D)  :- maxstato(T,E), at(T,R,C,E), D=R+C.
+distMax(T,D) :- time(T), dom6(D), #min{D1 : posMax(T,D1)} = D.
+
+% monotonia: coppie adiacenti in cui il valore CRESCE allontanandosi
+% dall'angolo di ancoraggio (0,0), cioe' le rotture della "scala".
+%
+% Orizzontali E VERTICALI. Contare solo le righe non era una semplificazione
+% ma una lacuna: nessuna regola guardava le colonne, quindi il modello poteva
+% impilare righe ordinatissime in ordine fra loro casuale e non pagare nulla.
+salita(T,R,C,R,C1) :- at(T,R,C,E), C1=C+1, at(T,R,C1,E1), E1>E.
+salita(T,R,C,R1,C) :- at(T,R,C,E), R1=R+1, at(T,R1,C,E1), E1>E.
+
 disordine(T,N) :- time(T), dom24(N),
-                  #count{R,C : at(T,R,C,E), C1=C+1, at(T,R,C1,E1), E1>E} = N.
+                  #count{R,C,R2,C2 : salita(T,R,C,R2,C2)} = N.
 
-% numero di merge nel piano (proxy economico del punteggio)
+% ---- LEVIGATEZZA: somma di |E-E1| sulle coppie adiacenti.
+% Due tessere adiacenti molto diverse non potranno mai fondersi e si bloccano
+% a vicenda lo spazio. La monotonia da sola non lo vede: un 2 accanto a un
+% 1024 e un 512 accanto a un 1024 sono entrambi "in discesa", e valgono
+% uguale.
+%
+% La somma NON passa da un aggregato con variabile di dominio: i weak
+% constraint sommano gia' sui termini discriminanti distinti, e un dominio
+% 0..384 replicato per ogni passo costerebbe grounding per nulla.
+salto(T,R,C,R,C1,X) :- at(T,R,C,E), C1=C+1, at(T,R,C1,E1), E>=E1, X=E-E1.
+salto(T,R,C,R,C1,X) :- at(T,R,C,E), C1=C+1, at(T,R,C1,E1), E1>E,  X=E1-E.
+salto(T,R,C,R1,C,X) :- at(T,R,C,E), R1=R+1, at(T,R1,C,E1), E>=E1, X=E-E1.
+salto(T,R,C,R1,C,X) :- at(T,R,C,E), R1=R+1, at(T,R1,C,E1), E1>E,  X=E1-E.
+
+% ---- MATRICE A SERPENTE: peso per casella lungo il percorso
+%   (0,0) (0,1) (0,2) (0,3)
+%   (1,3) (1,2) (1,1) (1,0)
+%   (2,0) (2,1) (2,2) (2,3)
+%   (3,3) (3,2) (3,1) (3,0)
+% che parte dall'angolo di ancoraggio e serpeggia. Le tessere in ordine
+% decrescente su quel percorso restano sempre fondibili con la successiva,
+% ed e' la ragione per cui il serpente e' l'euristica piu' forte conosciuta
+% per 2048.
+%
+% Il peso e' l'indice sul percorso diviso per tre (0..5) e non l'indice pieno
+% (0..15): moltiplicato per l'esponente, un peso 0..15 arriverebbe a 255 per
+% singola tessera e schiaccerebbe monotonia e levigatezza, che stanno nello
+% stesso livello. A scala ridotta il serpente orienta senza monopolizzare.
+serp(0,0,0). serp(0,1,1). serp(0,2,1). serp(0,3,1).
+serp(1,3,2). serp(1,2,2). serp(1,1,2). serp(1,0,3).
+serp(2,0,3). serp(2,1,3). serp(2,2,4). serp(2,3,4).
+serp(3,3,4). serp(3,2,5). serp(3,1,5). serp(3,0,5).
+
+% ---- MERGE PESATI PER VALORE (proxy economico del punteggio)
+% Contarli e basta equipara la fusione di due 2 a quella di due 512. Il premio
+% e' l'ESPONENTE fuso, cioe' il logaritmo del valore e non il valore: i pesi
+% grandi nei weak constraint fanno esplodere i tempi, e una scala logaritmica
+% ordina i merge esattamente allo stesso modo restando a due cifre.
 nmerge(N) :- domM(N), #count{T,D,L,K : mrg(T,D,L,K)} = N.
 
 % ============================================================
@@ -161,14 +268,46 @@ nmerge(N) :- domM(N), #count{T,D,L,K : mrg(T,D,L,K)} = N.
 % costo giusto e' il peggio sui rami, e lo aggiunge adversary.dlv2 ai livelli
 % sopra questi.
 %
-% L'angolo si valuta SOLO sullo stato finale, ed e' l'unico termine che non e'
-% stato messo a ogni passo. Misurato, non deciso a tavolino: sommando 1@4 per
-% ogni passo senza il massimo nell'angolo, il livello 4 arriva a valere fino a
-% H e schiaccia lessicograficamente tutto il resto. A H=2 si notava appena, a
-% H=3 il punteggio medio crollava da ~5300 a ~3200 su seme identico. Un
-% criterio binario a priorita' massima va tenuto binario.
+% ---- PERCHE' TRE LIVELLI E NON QUATTRO
+% I livelli lessicografici sono uno strumento brutale: il livello sotto conta
+% solo a parita' esatta di quello sopra. Con quattro livelli un guadagno di un
+% punto di riempimento batteva qualunque miglioramento di monotonia, e la
+% monotonia batteva qualunque numero di merge.
+%
+% Riempimento e merge restano su livelli propri, perche' dicono cose di
+% natura diversa: riempirsi e' fatale e il costo e' gia' convesso, i merge
+% sono il guadagno e devono decidere solo a parita' di posizione.
+%
+% I termini POSIZIONALI invece descrivono tutti la stessa cosa da angoli
+% diversi — quanto la board e' pettinata verso l'angolo — e ordinarli fra loro
+% e' arbitrario. Stanno in un solo livello con pesi relativi, come fanno gli
+% AI forti di 2048, che valutano una somma pesata e non una gerarchia.
+%
+% I pesi: la monotonia conta 4 per coppia invertita, la levigatezza 1 per
+% unita' di esponente (una coppia 2/1024 vale gia' 9), la distanza del massimo
+% dall'angolo 3 per casella. Ordini di grandezza confrontabili per passo, che
+% e' l'unica cosa che serve: nessuno dei tre deve poter azzerare gli altri.
+%
+% Il tag costante (mon/lev/anc) nei termini discriminanti serve a impedire che
+% due weak constraint dello stesso livello collassino sulla stessa tupla.
 % ============================================================
-:~ horizon(TH), not inangolo(TH).             [1@4]
 :~ passo(T), carico(T,M), costoCarico(M,W).   [W@3, T]
-:~ passo(T), disordine(T,N).                  [N@2, T]
-:~ nmerge(N), C=32-N.                         [C@1]
+
+:~ passo(T), disordine(T,N), W=N*4.           [W@2, mon,T]
+:~ passo(T), salto(T,R,C,R2,C2,X).            [X@2, lev,T,R,C,R2,C2]
+:~ passo(T), distMax(T,D), W=D*3.             [W@2, anc,T]
+
+% ---- il livello dei merge, in due pezzi che sommati fanno "massimizza la
+% somma degli esponenti fusi". La riscrittura non e' cosmetica: la stessa
+% quantita' scritta come #sum{E,T,D,L,K : mrg(...), comp(...,E)} costa 17,5 s
+% contro 5,4 s su una board a orizzonte 6, perche' l'aggregato costringe il
+% grounder a istanziare anche l'esponente. Qui i weak constraint sommano gia'
+% sulle tuple distinte e l'aggregato resta quello, piu' piccolo, sui soli merge.
+%
+% Il conto: 18*(32-N) + somma di (18-E) = 576 - somma di E. Il fattore 18 sul
+% termine di conteggio e' obbligatorio, non una taratura. Senza, ogni merge in
+% piu' aggiungerebbe (18-E) > 0 al costo e il modello preferirebbe non fondere
+% affatto: e' 18 che ricompra il merge prima di pesarlo. Verificato: i due
+% costi differiscono di una costante (321) e l'ottimo e' lo stesso.
+:~ nmerge(N), C1=32-N, C=C1*18.               [C@1, cnt]
+:~ mrg(T,D,L,K), comp(T,D,L,K,E), W=18-E.     [W@1, val,T,D,L,K]

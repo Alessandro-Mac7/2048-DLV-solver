@@ -61,8 +61,11 @@ servono ~2500 punti per la significativita' al 5%.
 - [x] G3: G2 + merge pesati.
 - [x] G4: G3 + restrizione del ventaglio (+ test di coerenza).
 - [x] G5: G4 + serpente.
-- [ ] Conferma della configurazione scelta su un **seme indipendente**.
-- [ ] Suite completa con `DLV2_HOME`, README aggiornato con i numeri veri,
+- [x] Conferma della configurazione scelta su un **seme indipendente**: non si
+      riproduce. Il secondo lotto da' +92 punti e t=0,09, i due insieme t=2,09
+      contro una soglia di 2,07. Il guadagno di punteggio resta non dimostrato;
+      quello di velocita', che e' deterministico, resta.
+- [x] Suite completa con `DLV2_HOME`, README aggiornato con i numeri veri,
       compresi quelli negativi.
 
 `MeccanicaCoerenteTest` deve continuare a passare a ogni gruppo: le regole di

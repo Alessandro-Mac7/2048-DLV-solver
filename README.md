@@ -242,6 +242,48 @@ rispondeva "nessuna mossa" su board con quattro mosse legali. Qui `step/1` resta
 un fatto del chiamante, e `VentaglioRistrettoTest` verifica su oltre cento board
 vive che una mossa applicabile arrivi sempre.
 
+#### Quanto e' servito: il costo si', la forza no
+
+Partite complete a orizzonte **fisso 4**, appaiate sugli stessi semi contro il
+programma di `main`. Due lotti da 12, su semi indipendenti.
+
+| lotto | coppie | riferimento | nuovo | differenza | t appaiato |
+|---|---|---|---|---|---|
+| semi 4001-4012 | 12 | 5362 | 8733 | **+3371** | **3,05** |
+| semi 7001-7012 | 12 | 6885 | 6977 | +92 | 0,09 |
+| i due insieme | 24 | 6123 | 7855 | +1732 | 2,09 |
+
+Il primo lotto sembra una vittoria netta: t=3,05 contro una soglia di 2,20, nove
+vittorie su dodici, quattro partite arrivate a 1024 contro zero. **Sul secondo
+lotto non si riproduce nulla**: +92 punti, t=0,09, sei vittorie su dodici. I due
+insieme danno t=2,09 contro una soglia di 2,07 e un intervallo di confidenza al
+95% di `[+15, +3448]`, cioe' un estremo inferiore indistinguibile da zero.
+
+Tessera massima sulle 24 coppie: riferimento `{128:1, 256:5, 512:16, 1024:2}`,
+nuovo `{256:4, 512:14, 1024:6}`. Le coppie discordanti sul 1024 sono 5 a 1 in
+favore del nuovo, che a una binomiale esatta bilaterale da' p=0,22. Nemmeno
+questo e' stabilito. **Il 2048 non e' mai stato raggiunto da nessuno dei due.**
+
+La conclusione onesta e' che **il guadagno di punteggio non e' dimostrato**. Un
+lotto da 12 partite ha una deviazione standard delle differenze intorno a 4000
+punti: con quel rumore, un lotto che da' +3371 e uno che da' +92 sono
+perfettamente compatibili con un miglioramento vero di poche centinaia di punti,
+e altrettanto compatibili con nessun miglioramento. Servirebbero dell'ordine di
+un centinaio di partite appaiate per separare le due ipotesi.
+
+Quello che invece e' stabilito, perche' non e' una statistica di partita ma una
+misura deterministica, e' il **costo**: il programma nuovo risponde da 1,4 a 8,9
+volte piu' in fretta a seconda dell'orizzonte. In esercizio, dove il parametro
+governato e' il budget di 3 secondi e non la profondita', quel margine si spende
+in un livello di ricerca in piu'.
+
+Due note operative. `senzaPiano` e' rimasto **0 su 48 partite** e circa 26 000
+chiamate: la restrizione del ventaglio non ha mai lasciato il solver senza mossa.
+I `errori` (timeout secco a 30 s del banco di prova, che usa orizzonte fisso e
+non l'approfondimento iterativo) passano da 0 a 3-4 per lotto, ed e' una
+conseguenza del fatto che il modello nuovo arriva a board con 1024 e 2048 in
+costruzione, che sono piu' care da risolvere: il riferimento non ci arriva mai.
+
 `MeccanicaCoerenteTest` inchioda a una a una tutte e quattro le direzioni per
 confrontare la board Java con quella ASP: la restrizione rifiuterebbe proprio la
 direzione inchiodata. Il fatto `meccanicaNuda`, che nessuno asserisce in
